@@ -1,21 +1,20 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SessionEvent } from "../../shared/realtime";
+import type { AcpClientEvent } from "../acpClientTypes";
 import { ChatPanel } from "./ChatPanel";
 
 const remoteAgentMock = vi.hoisted(() => {
   const defaultRunImplementation = async (message: string) => {
-    remoteAgentMock.lastOnSessionEvent?.({ type: "user_message", text: message, queued: false });
-    remoteAgentMock.lastOnSessionEvent?.({ type: "status_changed", status: "streaming", message: "Writing" });
-    remoteAgentMock.lastOnSessionEvent?.({ type: "text_delta", delta: "Echo: " });
-    remoteAgentMock.lastOnSessionEvent?.({ type: "text_delta", delta: message });
-    remoteAgentMock.lastOnSessionEvent?.({ type: "assistant_message_completed", id: "assistant-1" });
-    remoteAgentMock.lastOnSessionEvent?.({ type: "run_completed" });
+    remoteAgentMock.lastOnAcpEvent?.({ type: "acp_user_message", text: message });
+    remoteAgentMock.lastOnAcpEvent?.({ type: "acp_status_changed", status: "streaming", message: "Writing" });
+    remoteAgentMock.lastOnAcpEvent?.({ type: "acp_agent_message_chunk", text: "Echo: " });
+    remoteAgentMock.lastOnAcpEvent?.({ type: "acp_agent_message_chunk", text: message });
+    remoteAgentMock.lastOnAcpEvent?.({ type: "acp_run_completed", stopReason: "end_turn" });
   };
 
   return {
-    lastOnSessionEvent: null as ((event: SessionEvent) => void) | null,
+    lastOnAcpEvent: null as ((event: AcpClientEvent) => void) | null,
     defaultRunImplementation,
     runMock: vi.fn(defaultRunImplementation),
   };
@@ -23,8 +22,8 @@ const remoteAgentMock = vi.hoisted(() => {
 
 vi.mock("../remoteAgent", () => ({
   RemoteAgent: class {
-    constructor(options?: { onSessionEvent?: (event: SessionEvent) => void }) {
-      remoteAgentMock.lastOnSessionEvent = options?.onSessionEvent ?? null;
+    constructor(options?: { onAcpEvent?: (event: AcpClientEvent) => void }) {
+      remoteAgentMock.lastOnAcpEvent = options?.onAcpEvent ?? null;
     }
 
     connect = vi.fn(async () => undefined);
@@ -35,7 +34,7 @@ vi.mock("../remoteAgent", () => ({
 
 describe("ChatPanel", () => {
   beforeEach(() => {
-    remoteAgentMock.lastOnSessionEvent = null;
+    remoteAgentMock.lastOnAcpEvent = null;
     remoteAgentMock.runMock.mockReset();
     remoteAgentMock.runMock.mockImplementation(remoteAgentMock.defaultRunImplementation);
   });
@@ -68,11 +67,9 @@ describe("ChatPanel", () => {
   it("relays message_parent tool calls to the parent message target", async () => {
     const postMessage = vi.fn();
     remoteAgentMock.runMock.mockImplementationOnce(async () => {
-      remoteAgentMock.lastOnSessionEvent?.({ type: "tool_call_started", toolCallId: "tool-1", toolName: "message_parent", rawInput: "{\"message\":" });
-      remoteAgentMock.lastOnSessionEvent?.({ type: "tool_input_delta", toolCallId: "tool-1", toolName: "message_parent", delta: "{\"kind\":\"ready\"}}" });
-      remoteAgentMock.lastOnSessionEvent?.({ type: "tool_call_ready", toolCallId: "tool-1", toolName: "message_parent" });
-      remoteAgentMock.lastOnSessionEvent?.({ type: "tool_completed", toolCallId: "tool-1", toolName: "message_parent", output: "message sent" });
-      remoteAgentMock.lastOnSessionEvent?.({ type: "run_completed" });
+      remoteAgentMock.lastOnAcpEvent?.({ type: "acp_tool_call_started", toolCallId: "tool-1", title: "message_parent", kind: "other", status: "pending", rawInput: "{\"message\":{\"kind\":\"ready\"}}" });
+      remoteAgentMock.lastOnAcpEvent?.({ type: "acp_tool_call_update", toolCallId: "tool-1", status: "completed", toolName: "message_parent", output: "message sent" });
+      remoteAgentMock.lastOnAcpEvent?.({ type: "acp_run_completed", stopReason: "end_turn" });
     });
 
     render(
@@ -95,10 +92,9 @@ describe("ChatPanel", () => {
         agentBackend="PiAgent"
         initialSession={{ id: "s1", agent: "PiAgent", createdAt: "now", restart: {} }}
         replayEvents={[
-          { type: "user_message", text: "Earlier question", queued: false },
-          { type: "text_delta", delta: "Earlier answer" },
-          { type: "assistant_message_completed", id: "assistant-1" },
-          { type: "run_completed" },
+          { type: "acp_user_message", text: "Earlier question" },
+          { type: "acp_agent_message_chunk", text: "Earlier answer" },
+          { type: "acp_run_completed", stopReason: "end_turn" },
         ]}
       />,
     );
@@ -114,9 +110,9 @@ describe("ChatPanel", () => {
         agentBackend="PiAgent"
         initialSession={{ id: "s1", agent: "PiAgent", createdAt: "now", restart: {} }}
         replayEvents={[
-          { type: "tool_call_started", toolCallId: "tool-1", toolName: "search_docs", rawInput: "{\"q\":\"agent\"}" },
-          { type: "tool_completed", toolCallId: "tool-1", toolName: "search_docs", output: "Found docs" },
-          { type: "run_completed" },
+          { type: "acp_tool_call_started", toolCallId: "tool-1", title: "search_docs", kind: "other", status: "pending", rawInput: "{\"q\":\"agent\"}" },
+          { type: "acp_tool_call_update", toolCallId: "tool-1", status: "completed", toolName: "search_docs", output: "Found docs" },
+          { type: "acp_run_completed", stopReason: "end_turn" },
         ]}
       />,
     );
@@ -132,10 +128,10 @@ describe("ChatPanel", () => {
         agentBackend="PiAgent"
         initialSession={{ id: "s1", agent: "PiAgent", createdAt: "now", restart: {} }}
         replayEvents={[
-          { type: "environment_event", kind: "environment_entered", payload: { environmentId: "browser" } },
-          { type: "user_message", text: "Earlier question", queued: false },
-          { type: "text_delta", delta: "Earlier answer" },
-          { type: "run_completed" },
+          { type: "acp_environment_event", kind: "environment_entered", payload: { environmentId: "browser" } },
+          { type: "acp_user_message", text: "Earlier question" },
+          { type: "acp_agent_message_chunk", text: "Earlier answer" },
+          { type: "acp_run_completed", stopReason: "end_turn" },
         ]}
       />,
     );
@@ -154,10 +150,10 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(remoteAgentMock.lastOnSessionEvent).not.toBeNull());
+    await waitFor(() => expect(remoteAgentMock.lastOnAcpEvent).not.toBeNull());
 
-    remoteAgentMock.lastOnSessionEvent?.({
-      type: "environment_event",
+    remoteAgentMock.lastOnAcpEvent?.({
+      type: "acp_environment_event",
       kind: "environment_offer_resolved",
       payload: { environmentId: "web:wikipedia", decision: "dismissed" },
     });
@@ -178,10 +174,10 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(remoteAgentMock.lastOnSessionEvent).not.toBeNull());
+    await waitFor(() => expect(remoteAgentMock.lastOnAcpEvent).not.toBeNull());
 
-    remoteAgentMock.lastOnSessionEvent?.({
-      type: "environment_event",
+    remoteAgentMock.lastOnAcpEvent?.({
+      type: "acp_environment_event",
       kind: "environment_offer_available",
       payload: { environmentId: "web:wikipedia" },
     });
@@ -191,8 +187,8 @@ describe("ChatPanel", () => {
 
   it("renders run failures as error blocks", async () => {
     remoteAgentMock.runMock.mockImplementationOnce(async (message: string) => {
-      remoteAgentMock.lastOnSessionEvent?.({ type: "user_message", text: message, queued: false });
-      remoteAgentMock.lastOnSessionEvent?.({ type: "run_failed", error: "Network down" });
+      remoteAgentMock.lastOnAcpEvent?.({ type: "acp_user_message", text: message });
+      remoteAgentMock.lastOnAcpEvent?.({ type: "acp_run_failed", error: "Network down" });
     });
     render(<ChatPanel agentBackend="PiAgent" initialSession={{ id: "s1", agent: "PiAgent", createdAt: "now", restart: {} }} />);
 

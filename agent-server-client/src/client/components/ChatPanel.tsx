@@ -4,19 +4,9 @@ import {
   AgentBackend,
   AgentRunStatus,
   AgentSessionSummary,
-  AgentStatusChangedEvent,
-  AgentTextDeltaEvent,
-  AgentThinkingDeltaEvent,
-  AgentToolCallStartedEvent,
-  AgentToolInputDeltaEvent,
-  AgentToolCallReadyEvent,
-  AgentToolRunningEvent,
-  AgentToolOutputDeltaEvent,
-  AgentToolCompletedEvent,
-  AgentToolErrorEvent,
-  UserMessageAcceptedEvent,
 } from "../agent";
 import { RemoteAgent, type RemoteSessionEvent } from "../remoteAgent";
+import type { AcpClientEvent } from "../acpClientTypes";
 import {
   ENVIRONMENT_OFFER_AVAILABLE_KIND,
   ENVIRONMENT_OFFER_RESOLVED_KIND,
@@ -44,22 +34,20 @@ type State = {
 };
 
 type Action =
-  | { type: "STATUS_CHANGED"; event: AgentStatusChangedEvent }
+  | { type: "STATUS_CHANGED"; status: AgentRunStatus; message?: string }
   | { type: "USER_MESSAGE_QUEUED"; message: QueuedMessage }
   | { type: "USER_MESSAGE_DEQUEUED"; id: string }
-  | { type: "USER_MESSAGE_ACCEPTED"; event: UserMessageAcceptedEvent }
-  | { type: "ASSISTANT_MESSAGE_COMPLETED" }
-  | { type: "TEXT_DELTA"; event: AgentTextDeltaEvent }
-  | { type: "THINKING_DELTA"; event: AgentThinkingDeltaEvent }
-  | { type: "TOOL_CALL_STARTED"; event: AgentToolCallStartedEvent }
-  | { type: "TOOL_INPUT_DELTA"; event: AgentToolInputDeltaEvent }
-  | { type: "TOOL_CALL_READY"; event: AgentToolCallReadyEvent }
-  | { type: "TOOL_RUNNING"; event: AgentToolRunningEvent }
-  | { type: "TOOL_OUTPUT_DELTA"; event: AgentToolOutputDeltaEvent }
-  | { type: "TOOL_COMPLETED"; event: AgentToolCompletedEvent }
-  | { type: "TOOL_ERROR"; event: AgentToolErrorEvent }
+  | { type: "USER_MESSAGE"; text: string; messageId?: string }
+  | { type: "AGENT_MESSAGE_CHUNK"; text: string }
+  | { type: "AGENT_THOUGHT_CHUNK"; text: string }
+  | { type: "TOOL_CALL_STARTED"; toolCallId: string; toolName: string; rawInput?: string }
+  | { type: "TOOL_INPUT_DELTA"; toolCallId: string; toolName?: string; delta: string }
+  | { type: "TOOL_RUNNING"; toolCallId: string }
+  | { type: "TOOL_OUTPUT_DELTA"; toolCallId: string; toolName?: string; delta: string }
+  | { type: "TOOL_COMPLETED"; toolCallId: string; toolName: string; output: string }
+  | { type: "TOOL_ERROR"; toolCallId: string; toolName: string; error: string }
   | { type: "RUN_COMPLETED" }
-  | { type: "RUN_FAILED"; error: string; source?: "protocol" | "connection" | "run" };
+  | { type: "RUN_FAILED"; error: string; source?: "run" | "connection" | "protocol" };
 
 function finalizeStreamingBlocks(blocks: Block[]): Block[] {
   return blocks.map((b) => {
@@ -85,8 +73,8 @@ function reducer(state: State, action: Action): State {
     case "STATUS_CHANGED":
       return {
         ...state,
-        status: { status: action.event.status, message: action.event.message ?? action.event.status },
-        isAgentProcessing: action.event.status !== "idle" && action.event.status !== "error",
+        status: { status: action.status, message: action.message ?? action.status },
+        isAgentProcessing: action.status !== "idle" && action.status !== "error",
       };
 
     case "USER_MESSAGE_QUEUED":
@@ -102,39 +90,35 @@ function reducer(state: State, action: Action): State {
         queuedMessages: state.queuedMessages.filter((message) => message.id !== action.id),
       };
 
-    case "USER_MESSAGE_ACCEPTED": {
-      const block: UserMessageBlock = { type: "text", role: "user", text: action.event.text, isStreaming: false };
+    case "USER_MESSAGE": {
+      const block: UserMessageBlock = { type: "text", role: "user", text: action.text, isStreaming: false };
       return { ...state, blocks: [...finalizeStreamingBlocks(state.blocks), block] };
     }
 
-    case "ASSISTANT_MESSAGE_COMPLETED":
-      return { ...state, blocks: finalizeStreamingBlocks(state.blocks) };
-
-    case "TEXT_DELTA": {
+    case "AGENT_MESSAGE_CHUNK": {
       const blocks = [...state.blocks];
       const last = blocks[blocks.length - 1];
       if (last && last.type === "text" && last.role === "assistant" && last.isStreaming) {
-        blocks[blocks.length - 1] = { ...last, text: last.text + action.event.delta };
+        blocks[blocks.length - 1] = { ...last, text: last.text + action.text };
       } else {
-        blocks.push({ type: "text", role: "assistant", text: action.event.delta, isStreaming: true } as AgentTextBlock);
+        blocks.push({ type: "text", role: "assistant", text: action.text, isStreaming: true } as AgentTextBlock);
       }
       return { ...state, blocks };
     }
 
-    case "THINKING_DELTA": {
+    case "AGENT_THOUGHT_CHUNK": {
       const blocks = [...state.blocks];
       const last = blocks[blocks.length - 1];
       if (last && last.type === "thinking" && last.isStreaming) {
-        blocks[blocks.length - 1] = { ...last, thinking: last.thinking + action.event.delta };
+        blocks[blocks.length - 1] = { ...last, thinking: last.thinking + action.text };
       } else {
-        blocks.push({ type: "thinking", thinking: action.event.delta, isStreaming: true } as ThinkingBlock);
+        blocks.push({ type: "thinking", thinking: action.text, isStreaming: true } as ThinkingBlock);
       }
       return { ...state, blocks };
     }
 
     case "TOOL_CALL_STARTED": {
-      const ev = action.event;
-      const exists = state.blocks.some((b) => b.type === "toolBlock" && b.id === ev.toolCallId);
+      const exists = state.blocks.some((b) => b.type === "toolBlock" && b.id === action.toolCallId);
       if (exists) return state;
 
       return {
@@ -143,11 +127,11 @@ function reducer(state: State, action: Action): State {
           ...state.blocks,
           {
             type: "toolBlock",
-            id: ev.toolCallId,
-            name: ev.toolName,
+            id: action.toolCallId,
+            name: action.toolName,
             status: "input_streaming",
-            arguments: ev.rawInput ?? "",
-            argumentsStreaming: true,
+            arguments: action.rawInput ?? "",
+            argumentsStreaming: !!action.rawInput,
             result: null,
             isError: false,
           },
@@ -156,19 +140,18 @@ function reducer(state: State, action: Action): State {
     }
 
     case "TOOL_INPUT_DELTA": {
-      const ev = action.event;
       const blocks = [...state.blocks];
-      const idx = blocks.findLastIndex((b) => b.type === "toolBlock" && b.id === ev.toolCallId);
+      const idx = blocks.findLastIndex((b) => b.type === "toolBlock" && b.id === action.toolCallId);
       if (idx !== -1) {
         const existing = blocks[idx] as ToolBlock;
-        blocks[idx] = { ...existing, status: "input_streaming", arguments: existing.arguments + ev.delta };
+        blocks[idx] = { ...existing, status: "input_streaming", arguments: existing.arguments + action.delta };
       } else {
         blocks.push({
           type: "toolBlock",
-          id: ev.toolCallId,
-          name: ev.toolName ?? "tool",
+          id: action.toolCallId,
+          name: action.toolName ?? "tool",
           status: "input_streaming",
-          arguments: ev.delta,
+          arguments: action.delta,
           argumentsStreaming: true,
           result: null,
           isError: false,
@@ -177,30 +160,19 @@ function reducer(state: State, action: Action): State {
       return { ...state, blocks };
     }
 
-    case "TOOL_CALL_READY":
-      return {
-        ...state,
-        blocks: updateLastToolBlock(state.blocks, action.event.toolCallId, (b) => ({
-          ...b,
-          name: action.event.toolName ?? b.name,
-          status: "ready",
-          argumentsStreaming: false,
-        })),
-      };
-
     case "TOOL_RUNNING":
       return {
         ...state,
-        blocks: updateLastToolBlock(state.blocks, action.event.toolCallId, (b) => ({ ...b, status: "running" })),
+        blocks: updateLastToolBlock(state.blocks, action.toolCallId, (b) => ({ ...b, status: "running", argumentsStreaming: false })),
       };
 
     case "TOOL_OUTPUT_DELTA":
       return {
         ...state,
-        blocks: updateLastToolBlock(state.blocks, action.event.toolCallId, (b) => ({
+        blocks: updateLastToolBlock(state.blocks, action.toolCallId, (b) => ({
           ...b,
           status: "running",
-          result: action.event.delta,
+          result: action.delta,
           isError: false,
           argumentsStreaming: false,
         })),
@@ -209,10 +181,10 @@ function reducer(state: State, action: Action): State {
     case "TOOL_COMPLETED":
       return {
         ...state,
-        blocks: updateLastToolBlock(state.blocks, action.event.toolCallId, (b) => ({
+        blocks: updateLastToolBlock(state.blocks, action.toolCallId, (b) => ({
           ...b,
           status: "completed",
-          result: action.event.output,
+          result: action.output,
           isError: false,
           argumentsStreaming: false,
         })),
@@ -221,10 +193,10 @@ function reducer(state: State, action: Action): State {
     case "TOOL_ERROR":
       return {
         ...state,
-        blocks: updateLastToolBlock(state.blocks, action.event.toolCallId, (b) => ({
+        blocks: updateLastToolBlock(state.blocks, action.toolCallId, (b) => ({
           ...b,
           status: "error",
-          result: action.event.error,
+          result: action.error,
           isError: true,
           argumentsStreaming: false,
         })),
@@ -300,71 +272,96 @@ export function ChatPanel({
     }
   };
 
-  const applyServerEvent = (message: RemoteSessionEvent) => {
-    switch (message.type) {
-      case "status_changed":
-        dispatch({ type: "STATUS_CHANGED", event: message as AgentStatusChangedEvent });
+  const applyAcpEvent = (event: AcpClientEvent) => {
+    switch (event.type) {
+      case "acp_status_changed":
+        dispatch({ type: "STATUS_CHANGED", status: event.status, message: event.message });
         break;
-      case "user_message":
-        dispatch({ type: "USER_MESSAGE_ACCEPTED", event: message as UserMessageAcceptedEvent });
+      case "acp_user_message":
+        dispatch({ type: "USER_MESSAGE", text: event.text, messageId: event.messageId });
         break;
-      case "assistant_message_completed":
-        dispatch({ type: "ASSISTANT_MESSAGE_COMPLETED" });
+      case "acp_user_message_chunk":
+        // User message chunks are the server replaying queued messages; skip duplicates
         break;
-      case "text_delta":
-        dispatch({ type: "TEXT_DELTA", event: message as AgentTextDeltaEvent });
+      case "acp_agent_message_chunk":
+        dispatch({ type: "AGENT_MESSAGE_CHUNK", text: event.text });
         break;
-      case "thinking_delta":
-        dispatch({ type: "THINKING_DELTA", event: message as AgentThinkingDeltaEvent });
+      case "acp_agent_thought_chunk":
+        dispatch({ type: "AGENT_THOUGHT_CHUNK", text: event.text });
         break;
-      case "tool_call_started": {
-        const event = message as AgentToolCallStartedEvent;
-        recordParentMessageToolStart(parentMessageToolStateRef.current, event);
-        dispatch({ type: "TOOL_CALL_STARTED", event });
-        break;
-      }
-      case "tool_input_delta": {
-        const event = message as AgentToolInputDeltaEvent;
-        recordParentMessageToolInputDelta(parentMessageToolStateRef.current, event);
-        dispatch({ type: "TOOL_INPUT_DELTA", event });
-        break;
-      }
-      case "tool_call_ready": {
-        const event = message as AgentToolCallReadyEvent;
-        maybePostParentMessageToolCall(parentMessageToolStateRef.current, event, onParentMessage);
-        dispatch({ type: "TOOL_CALL_READY", event });
+      case "acp_tool_call_started": {
+        const toolName = event.title;
+        recordParentMessageToolStart(parentMessageToolStateRef.current, {
+          toolCallId: event.toolCallId,
+          toolName,
+          rawInput: event.rawInput,
+        });
+        dispatch({
+          type: "TOOL_CALL_STARTED",
+          toolCallId: event.toolCallId,
+          toolName,
+          rawInput: event.rawInput,
+        });
         break;
       }
-      case "tool_running":
-        dispatch({ type: "TOOL_RUNNING", event: message as AgentToolRunningEvent });
+      case "acp_tool_call_update": {
+        const tc = event;
+        switch (tc.status) {
+          case "in_progress": {
+            if (tc.output !== undefined) {
+              // Tool output delta
+              dispatch({
+                type: "TOOL_OUTPUT_DELTA",
+                toolCallId: tc.toolCallId,
+                toolName: tc.toolName,
+                delta: tc.output,
+              });
+            } else {
+              dispatch({ type: "TOOL_RUNNING", toolCallId: tc.toolCallId });
+            }
+            break;
+          }
+          case "completed": {
+            // Trigger parent message relay for message_parent tool calls
+            maybePostParentMessageToolCall(
+              parentMessageToolStateRef.current,
+              { toolCallId: tc.toolCallId, toolName: tc.toolName },
+              onParentMessage,
+            );
+            dispatch({
+              type: "TOOL_COMPLETED",
+              toolCallId: tc.toolCallId,
+              toolName: tc.toolName ?? "tool",
+              output: tc.output ?? "",
+            });
+            break;
+          }
+          case "failed":
+          case "cancelled":
+            dispatch({
+              type: "TOOL_ERROR",
+              toolCallId: tc.toolCallId,
+              toolName: tc.toolName ?? "tool",
+              error: tc.output ?? tc.status,
+            });
+            break;
+        }
         break;
-      case "tool_output_delta":
-        dispatch({ type: "TOOL_OUTPUT_DELTA", event: message as AgentToolOutputDeltaEvent });
-        break;
-      case "tool_completed":
-        dispatch({ type: "TOOL_COMPLETED", event: message as AgentToolCompletedEvent });
-        break;
-      case "tool_error":
-        dispatch({ type: "TOOL_ERROR", event: message as AgentToolErrorEvent });
-        break;
-      case "run_completed":
+      }
+      case "acp_run_completed":
         handleRunCompletion();
         break;
-      case "run_failed":
+      case "acp_run_failed":
         isAgentProcessingRef.current = false;
-        dispatch({ type: "RUN_FAILED", error: message.error ?? "Run failed", source: "run" });
+        dispatch({ type: "RUN_FAILED", error: event.error, source: "run" });
         break;
-      case "protocol_error":
+      case "acp_connection_error":
         isAgentProcessingRef.current = false;
-        dispatch({ type: "RUN_FAILED", error: message.error ?? "Protocol error", source: "protocol" });
+        dispatch({ type: "RUN_FAILED", error: event.error, source: "connection" });
         break;
-      case "connection_error":
-        isAgentProcessingRef.current = false;
-        dispatch({ type: "RUN_FAILED", error: message.error ?? "Connection error", source: "connection" });
-        break;
-      case "environment_event":
-        if (message.kind === ENVIRONMENT_OFFER_AVAILABLE_KIND && onEnvironmentOfferAvailable) {
-          const payload = message.payload;
+      case "acp_environment_event":
+        if (event.kind === ENVIRONMENT_OFFER_AVAILABLE_KIND && onEnvironmentOfferAvailable) {
+          const payload = event.payload;
           if (payload && typeof payload === "object" && "environmentId" in payload && typeof payload.environmentId === "string") {
             const offer = payload as { environmentId: string; sourceName?: unknown; canonicalSourceUrl?: unknown };
             onEnvironmentOfferAvailable({
@@ -374,8 +371,8 @@ export function ChatPanel({
             });
           }
         }
-        if (message.kind === ENVIRONMENT_OFFER_RESOLVED_KIND && onEnvironmentOfferResolved) {
-          const payload = message.payload;
+        if (event.kind === ENVIRONMENT_OFFER_RESOLVED_KIND && onEnvironmentOfferResolved) {
+          const payload = event.payload;
           if (
             payload
             && typeof payload === "object"
@@ -400,7 +397,7 @@ export function ChatPanel({
     if (replayAppliedRef.current) return;
     replayAppliedRef.current = true;
     if (replayEvents.length === 0) return;
-    for (const event of replayEvents) applyServerEvent(event);
+    for (const event of replayEvents) applyAcpEvent(event);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -411,7 +408,7 @@ export function ChatPanel({
     const activeAgent = new RemoteAgent({
       backend: agentBackend,
       session: initialSession ?? undefined,
-      onSessionEvent: applyServerEvent,
+      onAcpEvent: applyAcpEvent,
     });
 
     agentRef.current = activeAgent;

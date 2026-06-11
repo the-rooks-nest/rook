@@ -1,9 +1,9 @@
 import { AgentBackend, AgentDefinition, AgentSessionSummary } from "./agent";
-import type { SessionEvent } from "../shared/realtime";
-import type { AcpPromptResponse, AcpServerMessage, JsonRpcMessage } from "../shared/acp";
-import { acpServerMessageToSessionEvents, isJsonRpcFailure, isJsonRpcNotification, isJsonRpcSuccess } from "./acpToSessionEvent";
+import type { AcpClientEvent } from "./acpClientTypes";
+import type { AcpPromptResponse, AcpSessionUpdate, JsonRpcMessage } from "../shared/acp";
+import { isJsonRpcFailure, isJsonRpcNotification, isJsonRpcSuccess } from "./acpToSessionEvent";
 
-export type RemoteSessionEvent = SessionEvent;
+export type RemoteSessionEvent = AcpClientEvent;
 
 export async function fetchAgentDefinitions(): Promise<AgentDefinition[]> {
   const response = await fetch("/api/agents");
@@ -55,7 +55,7 @@ export interface RemoteAgentOptions {
   sessionName?: string;
   includeReplayEvents?: boolean;
   restartExisting?: boolean;
-  onSessionEvent?: (event: SessionEvent) => void;
+  onAcpEvent?: (event: AcpClientEvent) => void;
 }
 
 export interface RemoteAgentStartResult {
@@ -81,6 +81,23 @@ function websocketUrl(endpoint: string, sessionId: string): string {
   return base.toString();
 }
 
+function getRookeryMeta(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const meta = (value as Record<string, unknown>).rookery;
+  return meta && typeof meta === "object" ? meta as Record<string, unknown> : undefined;
+}
+
+function textFromContentItems(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((item) => {
+      if (!item || typeof item !== "object") return "";
+      const value = (item as { content?: { text?: unknown } }).content?.text;
+      return typeof value === "string" ? value : "";
+    })
+    .join("\n");
+}
+
 export class RemoteAgent {
   private startEndpoint: string;
   private wsEndpoint: string;
@@ -89,7 +106,7 @@ export class RemoteAgent {
   private sessionName?: string;
   private includeReplayEvents?: boolean;
   private restartExisting?: boolean;
-  private onSessionEvent?: (event: SessionEvent) => void;
+  private onAcpEvent?: (event: AcpClientEvent) => void;
   private socket: WebSocket | null = null;
   private connectPromise: Promise<void> | null = null;
   private pendingRuns: PendingRun[] = [];
@@ -104,7 +121,7 @@ export class RemoteAgent {
     this.sessionName = options.sessionName;
     this.includeReplayEvents = options.includeReplayEvents;
     this.restartExisting = options.restartExisting;
-    this.onSessionEvent = options.onSessionEvent;
+    this.onAcpEvent = options.onAcpEvent;
   }
 
   async start(): Promise<RemoteAgentStartResult> {
@@ -121,7 +138,7 @@ export class RemoteAgent {
 
     if (!response.ok) {
       const error = `Remote agent start failed with HTTP ${response.status}`;
-      this.emitLocalEvent({ type: "connection_error", error });
+      this.onAcpEvent?.({ type: "acp_connection_error", error });
       throw new Error(error);
     }
 
@@ -151,8 +168,8 @@ export class RemoteAgent {
       socket.addEventListener("message", (event) => {
         try {
           this.handleMessage(JSON.parse(String(event.data)) as JsonRpcMessage);
-        } catch (error) {
-          this.emitLocalEvent({ type: "protocol_error", error: `Failed to parse websocket payload: ${String(error)}` });
+        } catch {
+          this.onAcpEvent?.({ type: "acp_connection_error", error: "Failed to parse websocket payload" });
         }
       });
 
@@ -162,7 +179,7 @@ export class RemoteAgent {
           this.connectPromise = null;
           reject(error);
         }
-        this.emitLocalEvent({ type: "connection_error", error: error.message });
+        this.onAcpEvent?.({ type: "acp_connection_error", error: error.message });
       });
 
       socket.addEventListener("close", () => {
@@ -175,7 +192,7 @@ export class RemoteAgent {
         if (!this.closed) {
           const error = new Error("Remote agent websocket closed.");
           while (this.pendingRuns.length > 0) this.pendingRuns.shift()?.reject(error);
-          this.emitLocalEvent({ type: "connection_error", error: error.message });
+          this.onAcpEvent?.({ type: "acp_connection_error", error: error.message });
         }
       }, { once: true });
     });
@@ -194,7 +211,7 @@ export class RemoteAgent {
     const socket = this.socket;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       const error = new Error("Remote agent websocket is not open.");
-      this.emitLocalEvent({ type: "run_failed", error: error.message });
+      this.onAcpEvent?.({ type: "acp_run_failed", error: error.message });
       throw error;
     }
 
@@ -203,8 +220,8 @@ export class RemoteAgent {
       this.pendingRuns.push({ requestId, promptText: userMessage, resolve, reject });
     });
 
-    this.emitLocalEvent({ type: "user_message", text: userMessage, queued: false });
-    this.emitLocalEvent({ type: "status_changed", status: "busy", message: "Agent is working" });
+    this.onAcpEvent?.({ type: "acp_user_message", text: userMessage });
+    this.onAcpEvent?.({ type: "acp_status_changed", status: "busy", message: "Agent is working" });
 
     socket.send(JSON.stringify({
       jsonrpc: "2.0",
@@ -217,10 +234,6 @@ export class RemoteAgent {
     }));
 
     return run;
-  }
-
-  private emitLocalEvent(event: SessionEvent): void {
-    this.onSessionEvent?.(event);
   }
 
   private resolvePendingRun(requestId: string): void {
@@ -242,30 +255,137 @@ export class RemoteAgent {
   private handlePromptResponse(message: AcpPromptResponse): void {
     const stopReason = message.result?.stopReason ?? "end_turn";
     if (stopReason === "cancelled") {
-      this.emitLocalEvent({ type: "run_failed", error: "Run cancelled" });
+      this.onAcpEvent?.({ type: "acp_run_failed", error: "Run cancelled" });
       this.rejectPendingRun("Run cancelled", String(message.id));
       return;
     }
-    this.emitLocalEvent({ type: "run_completed" });
+    this.onAcpEvent?.({ type: "acp_run_completed", stopReason });
     this.resolvePendingRun(String(message.id));
+  }
+
+  private handleSessionUpdate(update: AcpSessionUpdate): void {
+    const sessionUpdate = update.sessionUpdate;
+    switch (sessionUpdate) {
+      case "user_message_chunk": {
+        const chunk = update as { messageId?: string; content?: { type?: unknown; text?: unknown } };
+        if (chunk.content?.type === "text" && typeof chunk.content.text === "string") {
+          this.onAcpEvent?.({
+            type: "acp_user_message_chunk",
+            text: chunk.content.text,
+            ...(typeof chunk.messageId === "string" ? { messageId: chunk.messageId } : {}),
+          });
+        }
+        break;
+      }
+      case "agent_message_chunk": {
+        const chunk = update as { content?: { type?: unknown; text?: unknown } };
+        if (chunk.content?.type === "text" && typeof chunk.content.text === "string") {
+          this.onAcpEvent?.({ type: "acp_agent_message_chunk", text: chunk.content.text });
+        }
+        break;
+      }
+      case "agent_thought_chunk": {
+        const chunk = update as { content?: { type?: unknown; text?: unknown } };
+        if (chunk.content?.type === "text" && typeof chunk.content.text === "string") {
+          this.onAcpEvent?.({ type: "acp_agent_thought_chunk", text: chunk.content.text });
+        }
+        break;
+      }
+      case "tool_call": {
+        const tc = update as { toolCallId: string; title: string; kind?: string; status?: string; _meta?: unknown };
+        const rookery = getRookeryMeta(tc._meta);
+        this.onAcpEvent?.({
+          type: "acp_tool_call_started",
+          toolCallId: tc.toolCallId,
+          title: tc.title,
+          kind: tc.kind ?? "other",
+          status: tc.status ?? "pending",
+          ...(typeof rookery?.rawInput === "string" ? { rawInput: rookery.rawInput } : {}),
+        });
+        break;
+      }
+      case "tool_call_update": {
+        const tcu = update as { toolCallId: string; status: string; content?: unknown; _meta?: unknown };
+        const rookery = getRookeryMeta(tcu._meta);
+        const toolName = typeof rookery?.toolName === "string" ? rookery.toolName : undefined;
+        const output = textFromContentItems(tcu.content) || undefined;
+        const validStatuses = ["pending", "in_progress", "completed", "failed", "cancelled"] as const;
+        const mappedStatus = (validStatuses as readonly string[]).includes(tcu.status)
+          ? tcu.status as "pending" | "in_progress" | "completed" | "failed" | "cancelled"
+          : "in_progress";
+        this.onAcpEvent?.({
+          type: "acp_tool_call_update",
+          toolCallId: tcu.toolCallId,
+          status: mappedStatus,
+          ...(toolName ? { toolName } : {}),
+          ...(output ? { output } : {}),
+        });
+        break;
+      }
+      case "_rookery_tool_input_delta":
+      case "_rookery_tool_call_ready":
+      case "_rookery_tool_output_delta": {
+        // Legacy custom updates — translate to tool_call_update style events
+        const legacy = update as { toolCallId?: unknown; toolName?: unknown; delta?: unknown; status?: unknown };
+        const toolCallId = String(legacy.toolCallId ?? "");
+        const toolName = typeof legacy.toolName === "string" ? legacy.toolName : undefined;
+        if (sessionUpdate === "_rookery_tool_input_delta") {
+          this.onAcpEvent?.({
+            type: "acp_tool_call_update",
+            toolCallId,
+            status: "in_progress",
+            ...(toolName ? { toolName } : {}),
+            output: String(legacy.delta ?? ""),
+          });
+        } else if (sessionUpdate === "_rookery_tool_output_delta") {
+          this.onAcpEvent?.({
+            type: "acp_tool_call_update",
+            toolCallId,
+            status: "in_progress",
+            ...(toolName ? { toolName } : {}),
+            output: String(legacy.delta ?? ""),
+          });
+        }
+        // _rookery_tool_call_ready is handled as a silent status transition on the server side
+        break;
+      }
+      case "_rookery_environment_event": {
+        const env = update as { kind?: unknown; payload?: unknown };
+        if (typeof env.kind === "string") {
+          this.onAcpEvent?.({
+            type: "acp_environment_event",
+            kind: env.kind,
+            payload: env.payload,
+          });
+        }
+        break;
+      }
+      case "_rookery_run_completed":
+      case "_rookery_run_failed":
+      case "_rookery_status_changed":
+      case "_rookery_assistant_message_started":
+      case "_rookery_assistant_message_completed":
+      case "_rookery_assistant_message_error":
+      case "_rookery_protocol_error":
+      case "_rookery_connection_error":
+        // Handled by the server-side translation layer; not emitted to client in new path
+        break;
+      default:
+        break;
+    }
   }
 
   private handleMessage(message: JsonRpcMessage): void {
     if (isJsonRpcNotification(message)) {
-      for (const event of acpServerMessageToSessionEvents(message as AcpServerMessage)) {
-        if (event.type === "user_message") {
-          const matchingPendingRun = this.pendingRuns.find((pending) => pending.promptText === event.text);
-          if (matchingPendingRun) continue;
-        }
-        if (event.type === "run_completed" || event.type === "run_failed") continue;
-        if (event.type === "status_changed" && event.status === "busy" && event.message === "Agent is working") continue;
-        this.onSessionEvent?.(event);
+      const params = message.params as { update?: AcpSessionUpdate } | undefined;
+      if (message.method === "session/update" && params?.update) {
+        this.handleSessionUpdate(params.update);
       }
       return;
     }
 
     if (isJsonRpcFailure(message)) {
-      this.emitLocalEvent({ type: "connection_error", error: message.error.message });
+      this.onAcpEvent?.({ type: "acp_connection_error", error: message.error.message });
       this.rejectPendingRun(message.error.message, message.id === null ? undefined : String(message.id));
       return;
     }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentSessionSummary } from "./agent";
-import type { SessionEvent } from "../shared/realtime";
+import type { AcpClientEvent } from "./acpClientTypes";
 import { fetchAgentDefinitions, fetchAgentSessions, fetchMostRecentSession, RemoteAgent } from "./remoteAgent";
 
 const session: AgentSessionSummary = { id: "s1", agent: "PiAgent", createdAt: "now", restart: {} };
@@ -75,10 +75,10 @@ describe("RemoteAgent", () => {
     websocketMock.MockWebSocket.instances.length = 0;
   });
 
-  it("sends user messages over websocket and surfaces session events", async () => {
+  it("sends user messages over websocket and surfaces acp client events", async () => {
     vi.stubGlobal("WebSocket", websocketMock.MockWebSocket);
-    const events: SessionEvent[] = [];
-    const agent = new RemoteAgent({ wsEndpoint: "/custom-ws", backend: "PiAgent", session, onSessionEvent: (event) => events.push(event) });
+    const events: AcpClientEvent[] = [];
+    const agent = new RemoteAgent({ wsEndpoint: "/custom-ws", backend: "PiAgent", session, onAcpEvent: (event) => events.push(event) });
 
     const runPromise = agent.run("hello");
     const socket = websocketMock.MockWebSocket.instances[0]!;
@@ -108,10 +108,10 @@ describe("RemoteAgent", () => {
 
     await runPromise;
     expect(events).toEqual([
-      { type: "user_message", text: "hello", queued: false },
-      { type: "status_changed", status: "busy", message: "Agent is working" },
-      { type: "text_delta", delta: "Hi" },
-      { type: "run_completed" },
+      { type: "acp_user_message", text: "hello" },
+      { type: "acp_status_changed", status: "busy", message: "Agent is working" },
+      { type: "acp_agent_message_chunk", text: "Hi" },
+      { type: "acp_run_completed", stopReason: "end_turn" },
     ]);
   });
 
@@ -143,13 +143,13 @@ describe("RemoteAgent", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/agent/session/recent");
   });
 
-  it("reports start HTTP failures as connection_error session events", async () => {
-    const events: SessionEvent[] = [];
+  it("reports start HTTP failures as connection_error events", async () => {
+    const events: AcpClientEvent[] = [];
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 503 }));
 
-    await expect(new RemoteAgent({ onSessionEvent: (event) => events.push(event) }).start()).rejects.toThrow("HTTP 503");
+    await expect(new RemoteAgent({ onAcpEvent: (event) => events.push(event) }).start()).rejects.toThrow("HTTP 503");
 
-    expect(events).toEqual([{ type: "connection_error", error: "Remote agent start failed with HTTP 503" }]);
+    expect(events).toEqual([{ type: "acp_connection_error", error: "Remote agent start failed with HTTP 503" }]);
   });
 
   it("loads agent definitions and sessions", async () => {
@@ -162,10 +162,10 @@ describe("RemoteAgent", () => {
     expect(fetchMock).toHaveBeenLastCalledWith("/api/agent/sessions?agent=PiAgent");
   });
 
-  it("reports websocket error messages as connection_error session events", async () => {
+  it("reports websocket error messages as connection_error events", async () => {
     vi.stubGlobal("WebSocket", websocketMock.MockWebSocket);
-    const events: SessionEvent[] = [];
-    const agent = new RemoteAgent({ session, onSessionEvent: (event) => events.push(event) });
+    const events: AcpClientEvent[] = [];
+    const agent = new RemoteAgent({ session, onAcpEvent: (event) => events.push(event) });
 
     const runPromise = agent.run("hello");
     const socket = websocketMock.MockWebSocket.instances[0]!;
@@ -174,7 +174,7 @@ describe("RemoteAgent", () => {
     socket.emitMessage({ jsonrpc: "2.0", id: "prompt-1", error: { code: -32000, message: "Remote exploded" } });
 
     await expect(runPromise).rejects.toThrow("Remote exploded");
-    expect(events).toContainEqual({ type: "connection_error", error: "Remote exploded" });
+    expect(events).toContainEqual({ type: "acp_connection_error", error: "Remote exploded" });
   });
 
   it("reconnects to an existing session without requesting transcript replay", async () => {
@@ -193,10 +193,10 @@ describe("RemoteAgent", () => {
     expect(secondSocket.url).not.toContain("fromSequence=");
   });
 
-  it("reports malformed websocket payloads as protocol_error session events", async () => {
+  it("reports malformed websocket payloads as connection_error events", async () => {
     vi.stubGlobal("WebSocket", websocketMock.MockWebSocket);
-    const events: SessionEvent[] = [];
-    const agent = new RemoteAgent({ session, onSessionEvent: (event) => events.push(event) });
+    const events: AcpClientEvent[] = [];
+    const agent = new RemoteAgent({ session, onAcpEvent: (event) => events.push(event) });
 
     void agent.connect();
     const socket = websocketMock.MockWebSocket.instances[0]!;
@@ -205,6 +205,6 @@ describe("RemoteAgent", () => {
 
     socket.emitMessage("not-json");
 
-    expect(events).toContainEqual(expect.objectContaining({ type: "protocol_error" }));
+    expect(events).toContainEqual(expect.objectContaining({ type: "acp_connection_error" }));
   });
 });
