@@ -5,6 +5,25 @@
       "type": "pi",
       "parentId": "PiAgent",
       "args": ["-e", "../my-agent"]
+    },
+    {
+      "id": "MyClaudeAgent",
+      "type": "claude",
+      "parentId": "ClaudeAgent",
+      "command": "claude",
+      "args": ["--add-dir", "../my-org-repo"]
+    },
+    {
+      "id": "PirateClaudeAgent",
+      "type": "claude",
+      "parentId": "ClaudeAgent",
+      "command": "claude",
+      "args": [
+        "--agents",
+        "{\"pirate\":{\"description\":\"Speaks like a pirate\",\"prompt\":\"Always speak like a pirate. Keep responses pirate-themed.\"}}",
+        "--agent",
+        "pirate"
+      ]
     }
   ]
 }

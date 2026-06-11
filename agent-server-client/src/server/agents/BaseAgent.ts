@@ -58,7 +58,7 @@ export class BaseAgent {
   private pendingRequests = new Map<JsonRpcId, PendingRequest>();
   private requestIndex = 0;
   private stopping = false;
-  private sessionIdValue?: string;
+  protected sessionIdValue?: string;
   private suppressUserMessageText?: string;
   private isReplayingSessionLoad = false;
 
@@ -149,7 +149,7 @@ export class BaseAgent {
     this.sessionIdValue = sessionId;
     this.isReplayingSessionLoad = true;
     try {
-      await this.sendRequestWithTimeout("session/load", { sessionId, cwd, mcpServers: [] }, this.options.startupTimeoutMs ?? 15_000);
+      await this.sendRequestWithTimeout("session/load", this.buildSessionLoadParams(sessionId, cwd), this.options.startupTimeoutMs ?? 15_000);
     } finally {
       this.isReplayingSessionLoad = false;
     }
@@ -158,7 +158,7 @@ export class BaseAgent {
 
   protected async registerSession(): Promise<AgentSessionRecord> {
     const cwd = this.getSessionCwd();
-    const result = await this.sendRequestWithTimeout("session/new", { cwd, mcpServers: [] }, this.options.startupTimeoutMs ?? 15_000);
+    const result = await this.sendRequestWithTimeout("session/new", this.buildSessionNewParams(cwd), this.options.startupTimeoutMs ?? 15_000);
     const sessionId = isObject(result) && typeof result.sessionId === "string" ? result.sessionId : undefined;
     if (!sessionId) throw new Error("ACP session/new did not return a sessionId.");
     this.sessionIdValue = sessionId;
@@ -167,6 +167,14 @@ export class BaseAgent {
       sessionId,
       cwd,
     });
+  }
+
+  protected buildSessionNewParams(cwd: string): unknown {
+    return { cwd, mcpServers: [] };
+  }
+
+  protected buildSessionLoadParams(sessionId: string, cwd: string): unknown {
+    return { sessionId, cwd, mcpServers: [] };
   }
 
   protected async runImpl(userMessage: string): Promise<void> {

@@ -2,6 +2,7 @@ import { REPO_ROOT } from "../paths.js";
 import { AGENT_PROFILES } from "../config/agentProfiles.js";
 import { BaseAgent, type BaseAgentOptions } from "./BaseAgent.js";
 import { PiAgent, type PiAgentOptions } from "./PiAgent.js";
+import { ClaudeAgent, type ClaudeAgentOptions } from "./ClaudeAgent.js";
 import type { AgentRestartMetadata } from "./sessionLog.js";
 
 export interface AgentDefinition {
@@ -34,6 +35,10 @@ function createGenericAcpAgent(restartMetadata: AgentRestartMetadata | undefined
   return new BaseAgent(options, restartMetadata);
 }
 
+function createClaudeAgent(restartMetadata: AgentRestartMetadata | undefined, options: ClaudeAgentOptions): BaseAgent {
+  return new ClaudeAgent(options, restartMetadata);
+}
+
 const AGENT_REGISTRY: AgentRegistryEntry[] = [
   {
     id: "PiAgent",
@@ -43,6 +48,14 @@ const AGENT_REGISTRY: AgentRegistryEntry[] = [
       agentName: "PiAgent",
       skillPaths: uniqueNonEmpty(options?.skillPaths),
       extensionPaths: uniqueNonEmpty(options?.extensionPaths),
+    }),
+  },
+  {
+    id: "ClaudeAgent",
+    parentId: null,
+    create: (restartMetadata) => createClaudeAgent(restartMetadata, {
+      cwd: REPO_ROOT,
+      agentName: "ClaudeAgent",
     }),
   },
   ...AGENT_PROFILES.map((profile): AgentRegistryEntry => {
@@ -58,6 +71,22 @@ const AGENT_REGISTRY: AgentRegistryEntry[] = [
           skillPaths: uniqueNonEmpty([...(profile.skillPaths ?? []), ...(options?.skillPaths ?? [])]),
           extensionPaths: uniqueNonEmpty([...(profile.extensionPaths ?? []), ...(options?.extensionPaths ?? [])]),
           startupTimeoutMs: profile.startupTimeoutMs,
+        }),
+      };
+    }
+
+    if (profile.type === "claude") {
+      return {
+        id: profile.id,
+        parentId: profile.parentId ?? "ClaudeAgent",
+        create: (restartMetadata) => createClaudeAgent(restartMetadata, {
+          command: profile.command,
+          args: profile.args,
+          env: profile.env,
+          cwd: profile.cwd ?? REPO_ROOT,
+          agentName: profile.id,
+          startupTimeoutMs: profile.startupTimeoutMs,
+          mcpServers: profile.mcpServers,
         }),
       };
     }

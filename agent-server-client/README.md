@@ -41,14 +41,27 @@ Default example:
 
 Field meanings:
 - `id`: label shown in the UI
-- `type`: runtime type; use `pi` for the built-in Pi ACP launcher, `acp` for a generic ACP subprocess
-- `parentId`: inherit the built-in Pi ACP defaults/grouping
-- `args`: extra arguments passed to `pi` before `pi-acp` adds its RPC/session flags
+- `type`: runtime type; use `pi` for the built-in Pi ACP launcher, `claude` for the built-in Claude ACP launcher, `acp` for a generic ACP subprocess
+- `parentId`: inherit the built-in agent defaults/grouping
+- `args`: runtime-specific arguments (`pi` forwards Pi-style args; `claude` currently supports `--add-dir <path>`)
 
 Important defaults:
-- `agent-server-client/node_modules/pi-acp/dist/index.js` is the ACP adapter we launch
+- `agent-server-client/node_modules/pi-acp/dist/index.js` is the ACP adapter used for Pi
+- `agent-server-client/node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js` is the ACP adapter used for Claude
 - `PiAgent` generates a tiny launcher internally at runtime instead of relying on a checked-in wrapper script
 - `args: ["-e", "../my-agent"]` still points Pi at `../my-agent`
+
+Example Claude profile:
+
+```json
+{
+  "id": "MyClaudeAgent",
+  "type": "claude",
+  "parentId": "ClaudeAgent",
+  "command": "claude",
+  "args": ["--add-dir", "../my-org-repo"]
+}
+```
 
 ## About `../my-agent/`
 

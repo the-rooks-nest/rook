@@ -48,9 +48,14 @@ Current default profile:
 }
 ```
 
+Built-in agent parents now include:
+- `PiAgent`
+- `ClaudeAgent`
+
 What that means:
 - `id`: the agent name shown in Agent Station
 - `type: "pi"`: use the built-in Pi-flavored ACP launcher
+- `type: "claude"`: use the built-in Claude-flavored ACP launcher
 - `parentId: "PiAgent"`: group this profile under the built-in Pi agent
 - `args`: extra arguments passed to `pi` before `pi-acp` adds its RPC/session flags
 

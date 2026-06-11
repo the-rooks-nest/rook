@@ -13,9 +13,10 @@ These are the next things we should do, in order:
 2. **Finish the ACP-only cleanup pass.**
    - Confirm deprecated Pi-RPC-era code is actually gone.
    - Confirm there is no compatibility-only replay path left behind.
-3. **Add non-native ACP adapters for Cursor and Claude Code before the client-state/UI mismatch work.**
+3. **Finish the non-native ACP adapter pass before the client-state/UI mismatch work.**
    - Treat these like `PiAgent`: thin runtime-specific adapters that enter Rookery through ACP.
-   - They should give us better test cases because their interactions are richer than Pi's.
+   - `ClaudeAgent` is now in place.
+   - Next in this sub-phase: Cursor.
 4. **Then continue with client-state/UI follow-through.**
 5. **Before the farthest-out UI changes, we're going to have a conversation about it.**
 
