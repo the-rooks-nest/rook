@@ -332,38 +332,55 @@ private struct HomeContent: View {
             }
 
             if model.voiceModeEnabled {
-                Button {
-                    model.toggleVoiceListening()
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: model.voiceListening ? "waveform.circle.fill" : "mic.circle")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(model.voiceListening ? PanelPalette.danger : PanelPalette.accent)
-                            .symbolEffect(.pulse, isActive: model.voiceListening)
-                        Text(voiceStatusText)
-                            .font(.caption)
-                            .foregroundStyle(model.voiceListening ? PanelPalette.textNormal : PanelPalette.textMuted)
-                            .lineLimit(2)
-                        Spacer(minLength: 0)
+                HStack(spacing: 8) {
+                    Button {
+                        model.toggleVoiceListening()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: model.voiceListening ? "waveform.circle.fill" : "mic.circle")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(model.voiceListening ? PanelPalette.danger : PanelPalette.accent)
+                                .symbolEffect(.pulse, isActive: model.voiceListening)
+                            Text(voiceStatusText)
+                                .font(.caption)
+                                .foregroundStyle(model.voiceListening ? PanelPalette.textNormal : PanelPalette.textMuted)
+                                .lineLimit(2)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(model.voiceListening ? PanelPalette.danger.opacity(0.14) : PanelPalette.backgroundPrimary.opacity(0.5))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(model.voiceListening ? PanelPalette.danger.opacity(0.5) : PanelPalette.border)
+                        )
                     }
-                    .padding(.vertical, 6)
-                    .padding(.horizontal, 8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(model.voiceListening ? PanelPalette.danger.opacity(0.14) : PanelPalette.backgroundPrimary.opacity(0.5))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(model.voiceListening ? PanelPalette.danger.opacity(0.5) : PanelPalette.border)
-                    )
+                    .buttonStyle(.plain)
+                    .help("Press to talk (or ⌃⌥Space anywhere)")
+                    .pointingHandOnHover()
+
+                    if model.voiceSpeaking {
+                        Button {
+                            model.stopSpeaking()
+                        } label: {
+                            Image(systemName: "stop.fill")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 34, height: 34)
+                                .background(Circle().fill(PanelPalette.danger))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Stop speaking")
+                        .pointingHandOnHover()
+                    }
                 }
-                .buttonStyle(.plain)
-                .help("Press to talk (or ⌃⌥Space anywhere)")
-                .pointingHandOnHover()
 
                 Text(model.voiceAuthorized
-                     ? "Press to talk, or hit ⌃⌥Space from any app. Speak, pause, and the agent replies aloud."
+                     ? "Press to talk or ⌃⌥Space from any app. Voice: \(model.voiceName). Talking interrupts playback."
                      : "Voice needs Microphone + Speech Recognition permission.")
                     .font(.caption2)
                     .foregroundStyle(PanelPalette.textMuted)

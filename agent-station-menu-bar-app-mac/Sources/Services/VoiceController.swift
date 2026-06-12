@@ -20,7 +20,6 @@ final class VoiceController: NSObject {
     private var task: SFSpeechRecognitionTask?
     private var silenceTimer: Timer?
     private var latestTranscript = ""
-    private var speechBuffer = ""   // accumulates streamed assistant text for sentence flushing
 
     private(set) var isListening = false
     private(set) var isSpeaking = false
@@ -154,54 +153,42 @@ final class VoiceController: NSObject {
 
     // MARK: - Speaking (text → speech)
 
-    /// Feed streamed assistant text; complete sentences are spoken as they form
-    /// so the reply starts before the full turn finishes.
-    func appendAssistantText(_ chunk: String) {
-        speechBuffer += chunk
-        flushCompleteSentences()
-    }
-
-    func flushRemainder() {
-        let remainder = Self.cleanForSpeech(speechBuffer)
-        speechBuffer = ""
-        if !remainder.isEmpty {
-            enqueue(remainder)
-        }
-    }
-
-    private func flushCompleteSentences() {
-        // Find the last sentence-ending punctuation and speak up to it.
-        guard let lastBreak = speechBuffer.lastIndex(where: { ".!?\n".contains($0) }) else {
-            return
-        }
-        let upToBreak = String(speechBuffer[...lastBreak])
-        speechBuffer = String(speechBuffer[speechBuffer.index(after: lastBreak)...])
-        let spoken = Self.cleanForSpeech(upToBreak)
-        if !spoken.isEmpty {
-            enqueue(spoken)
-        }
-    }
-
+    /// Speak a complete response in one pass (called once the agent turn ends).
     func speak(_ text: String) {
         let cleaned = Self.cleanForSpeech(text)
         guard !cleaned.isEmpty else {
             return
         }
-        enqueue(cleaned)
+        let utterance = AVSpeechUtterance(string: cleaned)
+        utterance.voice = Self.preferredVoice()
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        synthesizer.speak(utterance)
     }
 
     func stopSpeaking() {
-        speechBuffer = ""
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
     }
 
-    private func enqueue(_ text: String) {
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        synthesizer.speak(utterance)
+    /// Pick the best installed English voice: premium (Siri-quality) →
+    /// enhanced → default. Override with `defaults write … VoiceIdentifier <id>`.
+    static func preferredVoice() -> AVSpeechSynthesisVoice? {
+        if let id = UserDefaults.standard.string(forKey: "VoiceIdentifier"),
+           let voice = AVSpeechSynthesisVoice(identifier: id) {
+            return voice
+        }
+        let english = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }
+        func best(_ quality: AVSpeechSynthesisVoiceQuality) -> AVSpeechSynthesisVoice? {
+            english.filter { $0.quality == quality }
+                .sorted { ($0.language == "en-US" ? 0 : 1) < ($1.language == "en-US" ? 0 : 1) }
+                .first
+        }
+        return best(.premium) ?? best(.enhanced) ?? AVSpeechSynthesisVoice(language: "en-US")
+    }
+
+    static func preferredVoiceName() -> String {
+        preferredVoice()?.name ?? "System default"
     }
 
     /// Strip markdown/code so the synthesizer doesn't read syntax aloud.

@@ -52,6 +52,25 @@ use prompts for Microphone + Speech Recognition. Combined with Computer
 Control, you can speak a request and have the agent act on your screen and
 report back aloud — no typing.
 
+**Timing.** Your speech is sent as the prompt; the agent's reply is spoken
+**once, after the full turn completes and renders** — not streamed
+sentence-by-sentence. Thinking and tool steps are silent; only the final
+response is read.
+
+**Stopping it.** A **Stop** button appears on the Voice card while it's
+speaking. Pressing to talk (or ⌃⌥Space) also interrupts playback — barge-in —
+so you can cut it off and respond.
+
+**Better voice.** The app auto-selects the best installed English voice
+(premium → enhanced → default). macOS ships only low-quality voices by default
+(you'll get "Samantha"), so for a natural voice download a **Premium** one:
+System Settings → Accessibility → Spoken Content → System Voice → *Manage
+Voices…* → English → pick a *(Premium)* or Siri voice. The app uses it
+automatically; pin a specific one with `defaults write
+com.rookery.AgentStationMenuBar VoiceIdentifier <voice-id>`. For studio-quality
+voices, swap `VoiceController`'s synthesizer for a cloud TTS (ElevenLabs,
+Cartesia, OpenAI).
+
 This is the local-first tier (free, private, no API). The quality knobs are
 swappable without touching the agent: drop in a cloud STT (Deepgram, Whisper)
 or a natural TTS (ElevenLabs, Cartesia) behind `VoiceController`, or front the

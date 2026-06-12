@@ -80,6 +80,7 @@ final class AgentStationModel: ObservableObject {
     private var healthTimer: Timer?
     private var blockCounter = 0
     private var enteredEnvironments: Set<String> = []
+    private var spokenTurnBuffer = ""
     private var autoResumeAttempted = false
     private var reconnectTask: Task<Void, Never>?
     private var panelWindow: NSWindow?
@@ -461,6 +462,7 @@ final class AgentStationModel: ObservableObject {
         appendBlock(.user(text: text))
         isRunning = true
         statusLine = "Agent is working…"
+        spokenTurnBuffer = ""
         socket.sendPrompt(text: text)
     }
 
@@ -536,7 +538,7 @@ final class AgentStationModel: ObservableObject {
             statusLine = "Responding…"
             appendStreamingText(text, isThinking: false)
             if voiceModeEnabled {
-                voice.appendAssistantText(text)
+                spokenTurnBuffer += text
             }
         case .agentThoughtChunk(let text):
             statusLine = "Thinking…"
@@ -603,14 +605,18 @@ final class AgentStationModel: ObservableObject {
             finalizeStreamingBlocks()
             isRunning = false
             statusLine = ""
-            if voiceModeEnabled {
-                voice.flushRemainder()
+            // Speak the whole response once, only after the turn is done and the
+            // text has rendered — not streamed sentence-by-sentence.
+            if voiceModeEnabled, !spokenTurnBuffer.isEmpty {
+                voice.speak(spokenTurnBuffer)
             }
+            spokenTurnBuffer = ""
             deliverNextQueuedIfIdle()
         case .runFailed(let message):
             finalizeStreamingBlocks()
             isRunning = false
             statusLine = ""
+            spokenTurnBuffer = ""
             appendErrorBlock(source: "run", message: message)
             deliverNextQueuedIfIdle()
         case .protocolError(let message):
@@ -992,6 +998,14 @@ final class AgentStationModel: ObservableObject {
         } else {
             appendBlock(.system(text: "Heard \"\(text)\" — start a session first."))
         }
+    }
+
+    func stopSpeaking() {
+        voice.stopSpeaking()
+    }
+
+    var voiceName: String {
+        VoiceController.preferredVoiceName()
     }
 
     func toggleVoiceListening() {
