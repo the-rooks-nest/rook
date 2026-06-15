@@ -1,0 +1,28 @@
+# Goals of Rook
+
+I also want to start an ongoing discussion on what Rook should be or could be. I’ve got my own ideas, but I definitely need your ideas and opinions too. Help me not to stump my toes, help Rook find it’s best path.
+
+Here are several things I’m aiming for w/ Rook:
+
+**Rook is your personal assistant with everything.** In this doc I use Rook and agent interchangeably. The bullets below are ordered roughly by the order of importance and the order of implementation.
+
+- **You bring your own agent.** Unlike OpenClaw or Hermes that use some agent internally (Pi), I want people to bring the agent they are used to, and I want them to set it up in a way that they feel is safe. Transparency here.
+  - If Rook becomes as popular as I hope it will be, then we'll start pulling in people that aren't tech-nerd hobbyists. At that point we'll have ready-made agents - either self-hosted or hosted in the cloud.
+  - Note that [Databricks Omnigent](https://www.databricks.com/blog/introducing-omnigent-meta-harness-combine-control-and-share-your-agents) appears to have heavy lap with this concept and maybe several others here.
+- **Rook is _your_ agent.** It intimately knows everything about you. ... I don't quite know how I want this to work though. Most of the tech-nerd hobbyists are still in the mentality that agents help with code, and they don't know how to make the agent really "know them". So is this like a tutorial? "How to connect your agent to Obsidian/Notion/Email/X/Y/Z?
+- **Rook goes with you everywhere.** If you open up an app, then Rook can be waiting there for you. If you are on a Mac (or eventually any OS including mobile OSes), then Rook is there.
+- **Rook is aware of its environment.** An environment is a program, a website, a physical location, and event, and maybe even other things (like people). And when the environment changes in meaningful ways, Rook is made aware so that it can interact w/ the environment appropriately.
+- **Rook is capable within any environment.** Environments offer up skills that allow the agent to understand how to interact with the environment. These skills are by default only active when you're in the environment that uses them.
+- **Rook is as safe and transparent as possible.** Rook skills are agent skills, but the "official/approved" skills are intentionally limited – they don't require access to file system or bash, and you can only interact with the environment through a `messageEnvironment` tool. (The environment also communicates its state changes in a limited way back to the agent.) – This bullet is very TBD, but the goals feel important.
+- **Eventually**
+    - **Rook offers multiple forms of interaction.** The main one will be direct chat. But you can also allow work to be scheduled (e.g. a cron job), and the agent can have a hook that will allow work to be pushed in from the outside.
+    - **Rook will offer advice for using Rook.** Rook will serve as its own tutorial. This is especially important for post-hobbyist users.
+    - **Rook keeps artifacts separate from chat.** Every agent harness misses this except for Cursor. It's annoying to be working on something with someone (or an agent) and never have any visibility into the work that is being done except for the state that was mentioned in the conversation and agent actions as they scrolled by OR the rare look at the entire work item. Instead, the artifacts of work need to be held separate from the conversation so that the agent or the user can "point" at artifacts, or interact w/ artifacts and mutually be aware of the change. For Rook (which isn't be default for coding) this can mean several things:
+        - Both Rook and the user can see the website. Rook can fill out forms and the user sees it and vice versa.
+        - If Rook and user are authoring a doc, then it's easy to see the changes made. Maybe red-green per-word diffs.
+    - **Rook can make interactive artifacts Just In Time.** the Rook could have its own tabbed panel to present the user w/ just-in-time created mini-applications that serve as the artifact. These applications can be interacted w/ by user or agent, and the user and agent sees the state change.
+    - **Rook will engage in "participatory learning" with user.** Rather than depending on black-box memory stuff (which John is deeply suspicious of), the user will engage w/ Rook in getting tasks done, and Rook will watch. _Then_ the user will work w/ Rook to cast the interaction into a new skill (or maybe something more general than a skill - something that appears in a linked knowledge base of skill-like things – probably implemented as an Obsidian-style directory of markdown docs). The next time, the task is encountered, the Rook will be more proactive but not entirely hands free. As the user learns to trust the Rook, it will update the skill so that it is taking on larger chunks of work.
+    - **Rook will intelligently work with multiple-agents.** Not included initially because of the complexity and risk, Rook will eventually support multiple types of multi-agent interactions.
+        - The main Rook can hand off parallel sub-tasks to background worker. The workers can notify the main Rook with updates of their task, and the main Rook can ask them how things are going.
+        - The main Rook can swap itself out for a new agent (one more fit for the current task) in the middle of the conversation.
+    
