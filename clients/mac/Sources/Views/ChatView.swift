@@ -8,6 +8,7 @@ struct ChatDetail: View {
     var elasticThreadCard = true
     var measurementMode = false
     @State private var draft = ""
+    @State private var composeHeight: CGFloat = 38
     @State private var isHoveringSend = false
     @State private var settingsExpanded = false
     @State private var threadIsAtBottom = true
@@ -277,23 +278,22 @@ struct ChatDetail: View {
 
     private var composeRow: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            TextField(composePlaceholder, text: $draft, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.callout)
-                .lineLimit(1...4)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(PanelPalette.backgroundPrimary.opacity(0.75))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(PanelPalette.border)
-                )
-                .onSubmit {
-                    submit()
-                }
+            ChatComposeTextView(
+                text: $draft,
+                placeholder: composePlaceholder,
+                measuredHeight: $composeHeight,
+                onSubmit: submit
+            )
+            .frame(minHeight: 38, maxHeight: 96)
+            .frame(height: min(max(composeHeight, 38), 96))
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(PanelPalette.backgroundPrimary.opacity(0.75))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(PanelPalette.border)
+            )
 
             Button {
                 submit()
@@ -408,6 +408,130 @@ struct ChatDetail: View {
         draft = ""
         model.resumeAutoScroll()
         model.send(text)
+    }
+}
+
+private struct ChatComposeTextView: NSViewRepresentable {
+    @Binding var text: String
+    var placeholder: String
+    @Binding var measuredHeight: CGFloat
+    var onSubmit: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text, placeholder: placeholder, measuredHeight: $measuredHeight, onSubmit: onSubmit)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let textView = SubmitTextView()
+        let scrollView = NSScrollView()
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = false
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.documentView = textView
+
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        textView.delegate = context.coordinator
+        textView.drawsBackground = false
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.font = .systemFont(ofSize: NSFont.systemFontSize)
+        textView.textContainerInset = NSSize(width: 6, height: 8)
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.string = text
+        context.coordinator.updateHeight(for: textView)
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? SubmitTextView else {
+            return
+        }
+        if textView.string != text {
+            textView.string = text
+        }
+        context.coordinator.placeholder = placeholder
+        textView.needsDisplay = true
+        context.coordinator.updateHeight(for: textView)
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        @Binding var text: String
+        @Binding var measuredHeight: CGFloat
+        var placeholder: String
+        var onSubmit: () -> Void
+
+        init(text: Binding<String>, placeholder: String, measuredHeight: Binding<CGFloat>, onSubmit: @escaping () -> Void) {
+            _text = text
+            _measuredHeight = measuredHeight
+            self.placeholder = placeholder
+            self.onSubmit = onSubmit
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else {
+                return
+            }
+            text = textView.string
+            updateHeight(for: textView)
+        }
+
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
+                    textView.insertNewlineIgnoringFieldEditor(nil)
+                    return true
+                }
+                onSubmit()
+                return true
+            }
+            if commandSelector == #selector(NSResponder.insertLineBreak(_:)) {
+                textView.insertNewlineIgnoringFieldEditor(nil)
+                return true
+            }
+            return false
+        }
+
+        func updateHeight(for textView: NSTextView) {
+            guard let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else {
+                return
+            }
+            layoutManager.ensureLayout(for: textContainer)
+            let used = layoutManager.usedRect(for: textContainer).height
+            let height = ceil(used + textView.textContainerInset.height * 2)
+            DispatchQueue.main.async {
+                self.measuredHeight = max(38, height)
+            }
+        }
+    }
+}
+
+private final class SubmitTextView: NSTextView {
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        guard string.isEmpty, let placeholder = (delegate as? ChatComposeTextView.Coordinator)?.placeholder, !placeholder.isEmpty else {
+            return
+        }
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
+            .foregroundColor: NSColor.placeholderTextColor,
+        ]
+        let origin = NSPoint(x: textContainerInset.width, y: textContainerInset.height)
+        placeholder.draw(at: origin, withAttributes: attributes)
     }
 }
 
