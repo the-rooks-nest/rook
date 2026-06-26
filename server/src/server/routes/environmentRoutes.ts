@@ -19,11 +19,14 @@ export async function registerEnvironmentRoutes(app: FastifyInstance, environmen
     const canonicalSourceUrl = typeof request.body?.canonicalSourceUrl === "string" ? request.body.canonicalSourceUrl : undefined;
     const sourceName = typeof request.body?.sourceName === "string" ? request.body.sourceName : undefined;
 
+    const trimmedId = id.trim();
+    request.log.info({ environmentId: trimmedId, sourceName, canonicalSourceUrl }, "environment registered");
+
     await environmentManager.registerAvailableEnvironment(
-      { id: id.trim(), metadata: (metadata ?? {}) as Record<string, unknown> },
+      { id: trimmedId, metadata: (metadata ?? {}) as Record<string, unknown> },
       { ...(canonicalSourceUrl ? { canonicalSourceUrl } : {}), ...(sourceName ? { sourceName } : {}) },
     );
-    return { ok: true, id: id.trim() };
+    return { ok: true, id: trimmedId };
   });
 
   app.post<{ Body: { id?: unknown } }>("/api/environments/unregister", async (request, reply) => {
@@ -32,7 +35,9 @@ export async function registerEnvironmentRoutes(app: FastifyInstance, environmen
       reply.code(400).send({ error: "Missing environment id" });
       return;
     }
-    environmentManager.unregister(id.trim());
+    const trimmedId = id.trim();
+    request.log.info({ environmentId: trimmedId }, "environment unregistered");
+    environmentManager.unregister(trimmedId);
     return { ok: true };
   });
 
@@ -47,7 +52,9 @@ export async function registerEnvironmentRoutes(app: FastifyInstance, environmen
       reply.code(400).send({ error: "Invalid decision" });
       return;
     }
-    environmentManager.decideEnvironment(environmentId.trim(), decision as EnvironmentDecision);
+    const trimmedEnvironmentId = environmentId.trim();
+    request.log.info({ environmentId: trimmedEnvironmentId, decision }, "environment decision recorded");
+    environmentManager.decideEnvironment(trimmedEnvironmentId, decision as EnvironmentDecision);
     return { ok: true };
   });
 

@@ -33,7 +33,7 @@ Notes:
   - you can pass multiple targets; they run in the order given
   - mac uses localhost by default
   - sim uses http://127.0.0.1:3000 by default
-  - phone uses your Mac's LAN IP by default
+  - phone requires your Mac's Tailscale MagicDNS name unless --server-url is provided
   - on macOS, the server launches in Terminal.app so Pi keeps Terminal's
     Downloads/Desktop/Documents permissions instead of losing them in a
     detached nohup background process.
@@ -334,7 +334,7 @@ start_server() {
   fi
 
   if (( HAS_PHONE_TARGET )) && listener_is_localhost_only; then
-    die "server is only listening on localhost; restart it so the phone can reach your Mac over LAN"
+    die "server is only listening on localhost; restart it so the phone can reach your Mac over Tailscale"
   fi
 }
 
@@ -352,8 +352,16 @@ ensure_xcode_project() {
   )
 }
 
-current_lan_ip() {
-  ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true
+current_tailscale_dns_name() {
+  if [[ -n "${ROOK_TAILSCALE_DNS_NAME:-}" ]]; then
+    printf '%s\n' "$ROOK_TAILSCALE_DNS_NAME"
+    return 0
+  fi
+  command -v tailscale >/dev/null 2>&1 || return 1
+  tailscale status --json 2>/dev/null | python3 -c '
+import json,sys
+print((json.load(sys.stdin).get("Self", {}) or {}).get("DNSName", ""))
+' 2>/dev/null | sed -e 's/\.$//' -e '/^$/d' || true
 }
 
 resolve_simulator() {
@@ -559,10 +567,15 @@ build_phone() {
     fi
   fi
 
-  local lan_ip
-  lan_ip="$(current_lan_ip)"
-  [[ -n "$lan_ip" ]] || die "could not determine your Mac's LAN IP for the phone"
-  local url="${SERVER_URL:-http://${lan_ip}:${SERVER_PORT}}"
+  local url
+  if [[ -n "$SERVER_URL" ]]; then
+    url="$SERVER_URL"
+  else
+    local tailscale_dns
+    tailscale_dns="$(current_tailscale_dns_name)"
+    [[ -n "$tailscale_dns" ]] || die "could not determine your Mac's Tailscale MagicDNS name for the phone; connect Tailscale or pass --server-url explicitly"
+    url="http://${tailscale_dns}:${SERVER_PORT}"
+  fi
 
   local app_dir="$REPO_ROOT/clients/iphone"
   local proj="$app_dir/Rook.xcodeproj"

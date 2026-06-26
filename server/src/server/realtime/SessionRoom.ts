@@ -25,6 +25,10 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function logEnvironmentEvent(sessionId: string, event: string, environmentId: string, extra: Record<string, unknown> = {}): void {
+  console.log(`[environment] session=${sessionId} event=${event} environment=${environmentId}${Object.keys(extra).length > 0 ? ` ${JSON.stringify(extra)}` : ""}`);
+}
+
 export class SessionRoom implements EnvironmentEventListener {
   private readonly events: RoomEventStream;
   private readonly environmentState = new EnvironmentSessionState();
@@ -81,20 +85,27 @@ export class SessionRoom implements EnvironmentEventListener {
   }
 
   onEnvironmentOffered(environmentId: string, info: EnvironmentOfferInfo): void {
+    logEnvironmentEvent(this.sessionId, "offered", environmentId, {
+      sourceName: info.sourceName,
+      canonicalSourceUrl: info.canonicalSourceUrl,
+    });
     void this.broadcastEnvironmentEvent(this.environmentState.offer(environmentId, info));
   }
 
   onEnvironmentResolved(environmentId: string, resolution: EnvironmentResolution): void {
+    logEnvironmentEvent(this.sessionId, "resolved", environmentId, { resolution });
     void this.broadcastEnvironmentEvent(this.environmentState.resolve(environmentId, resolution));
   }
 
   onEnvironmentEntered(environmentId: string, skillPaths: string[]): void {
+    logEnvironmentEvent(this.sessionId, "entered", environmentId, { skillPathCount: skillPaths.length });
     this.environmentState.enter(environmentId, skillPaths);
     this.scheduleRuntimeRebuild(ENVIRONMENT_ENTERED_KIND, environmentId, true);
   }
 
   onEnvironmentExited(environmentId: string): void {
     if (!this.environmentState.exit(environmentId)) return;
+    logEnvironmentEvent(this.sessionId, "exited", environmentId);
     this.scheduleRuntimeRebuild(ENVIRONMENT_EXITED_KIND, environmentId, false);
   }
 

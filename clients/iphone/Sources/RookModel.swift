@@ -87,6 +87,9 @@ final class RookModel: ObservableObject {
         let urlString: String
         if let env, !env.isEmpty {
             urlString = env
+            if stored != env {
+                UserDefaults.standard.set(env, forKey: "RookServerBaseURL")
+            }
         } else if let stored, !stored.isEmpty {
             urlString = stored
         } else {

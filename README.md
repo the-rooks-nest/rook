@@ -45,6 +45,43 @@ Use the package READMEs above as the main lookup docs for each area.
    a detached `nohup` process.
 5. The server listens on `http://127.0.0.1:3000`
 
+## iPhone + home server onboarding with Tailscale
+
+Rook works well as a "phone client talks to an always-on home agent" setup.
+A common arrangement is:
+
+- a spare Mac, Mac mini, or laptop at home runs the Rook server
+- your iPhone runs the native Rook client
+- both devices join the same [Tailscale](https://tailscale.com/) tailnet
+- the iPhone connects to the server through the Mac's Tailscale MagicDNS name
+
+Typical setup flow:
+
+1. Create a Tailscale account.
+2. Install the Tailscale app on the Mac that will host the Rook server.
+3. Install the Tailscale app on your iPhone.
+4. Sign both devices into the same tailnet.
+5. In Tailscale, note the Mac's MagicDNS hostname (something like
+   `your-mac.tailxxxx.ts.net`).
+6. Start the Rook server on the Mac.
+7. Point the iPhone client at `http://<your-mac>.ts.net:3000`.
+
+The `./scripts/run-rook.sh phone` launcher is set up for exactly this flow: it
+launches the iPhone app using the Mac's Tailscale MagicDNS hostname by default.
+Once both devices are on Tailscale, the phone can talk securely to the server
+from anywhere with internet access — not just when both are on the same Wi-Fi.
+
+Quick troubleshooting:
+
+- On the iPhone, open Safari and visit:
+  - `http://<your-mac>.ts.net:3000/api/health`
+- Expected response:
+  - `{"ok":true,"service":"rook"}`
+- If Safari works but the app does not, confirm the Rook app's server setting is
+  exactly the same URL and reinstall/relaunch the app if needed.
+- If Safari does not work, the problem is almost certainly Tailscale setup,
+  device membership, or whether the server is actually running on the Mac.
+
 ## Pi agent configuration
 Default Pi agent profiles live in:
 - `server/config/agent-profiles.json`
@@ -96,7 +133,7 @@ If you move or rename the sibling package, update `args` in `agent-profiles.json
 - `./scripts/run-rook.sh server` — start the server only (or reuse the running one); on macOS this opens it in Terminal.app by default to preserve protected-folder access for Pi
 - `./scripts/run-rook.sh mac` — start the server if needed, rebuild, and launch the macOS menu bar app
 - `./scripts/run-rook.sh sim` — start the server if needed, rebuild, and launch the iPhone app in Simulator
-- `./scripts/run-rook.sh phone` — start the server if needed, rebuild, and launch the iPhone app on a paired device
+- `./scripts/run-rook.sh phone` — start the server if needed, rebuild, and launch the iPhone app on a paired device using your Mac's Tailscale MagicDNS hostname
 - `./scripts/run-rook.sh stop` — stop the server, mac app, simulator app, booted simulators, and phone app when reachable
 
 ## Manual environment/debugging actions
@@ -109,7 +146,7 @@ If you move or rename the sibling package, update `args` in `agent-profiles.json
 - `server/` currently owns the backend npm deps and lockfile
 - `server/src/shared/` now holds the TypeScript protocol/domain contracts used by the server and the debug bridge CLI
 - `clients/mac/` is a Swift/xcodegen package (not npm); the preferred local launcher is `./scripts/run-rook.sh mac`, though you can still build manually with `xcodegen generate` + `xcodebuild` — see its [README](clients/mac/README.md) for exact run steps and menu-bar troubleshooting
-- `clients/iphone/` is a Swift/xcodegen package (not npm); the preferred local launchers are `./scripts/run-rook.sh sim` and `./scripts/run-rook.sh phone`. It depends on `clients/RookKit/` and adds a Widget extension for the Live Activity — see its [README](clients/iphone/README.md) for device/simulator run steps and location-testing
+- `clients/iphone/` is a Swift/xcodegen package (not npm); the preferred local launchers are `./scripts/run-rook.sh sim` and `./scripts/run-rook.sh phone` (which now uses Tailscale MagicDNS for physical devices). It depends on `clients/RookKit/` and adds a Widget extension for the Live Activity — see its [README](clients/iphone/README.md) for device/simulator run steps and location-testing
 - `clients/RookKit/` is a local Swift Package (iOS + macOS) holding the cross-platform layer shared by both Swift clients (models, REST/ACP clients, design system, voice, Live Activity attributes); build-check it with `cd clients/RookKit && swift build`
 - `environment-repository/` holds local environment-linked skill bundles, keyed `<kind>/<path>` (`web/wikipedia`, `demo/demo`, `app/<slug>` for Mac apps fronted by the menu bar provider, and `place/<slug>` for physical locations fronted by the iPhone provider)
 - `scripts/` holds repo-level utilities

@@ -67,7 +67,7 @@ struct SettingsScreen: View {
                         .strokeBorder(PanelPalette.border)
                 )
 
-            Text("On a device, use your Mac's LAN address. The simulator reaches localhost directly.")
+            Text("On a device, use your Mac's Tailscale MagicDNS name. The simulator reaches localhost directly.")
                 .font(.caption2)
                 .foregroundStyle(PanelPalette.textMuted)
 
