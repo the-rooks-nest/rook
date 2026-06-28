@@ -248,7 +248,7 @@ Current ecosystem around `:3000`:
 - **Chrome extension**: detects supported web contexts and registers `web:<slug>` environments
 - **Obsidian plugin**: embeds the app in a sidebar view
 - **macOS menu bar app**: native SwiftUI client with the same backend; also registers `app:<slug>` environments for the frontmost Mac app
-- **iPhone app**: native SwiftUI client that registers `place:<slug>` environments from GPS geofences, making the agent location-aware (skills load as you arrive at a defined place). Adds Live Activity / Dynamic Island presence and on-device voice. See [`PRODUCT_CHANGES/research/rook-on-iphone.md`](../PRODUCT_CHANGES/research/rook-on-iphone.md) for the iOS sandbox constraints and the hosted-server/APNs follow-up.
+- **iPhone app**: native SwiftUI client that registers `place:<slug>` environments from GPS geofences, making the agent location-aware (skills load as you arrive at a defined place). It also drives ptiles-based business discovery on arrival, registering `loc:<domain>/…` environments — see [`location-environment-awareness.md`](./location-environment-awareness.md). Adds Live Activity / Dynamic Island presence and on-device voice. See [`PRODUCT_CHANGES/research/rook-on-iphone.md`](../PRODUCT_CHANGES/research/rook-on-iphone.md) for the iOS sandbox constraints and the hosted-server/APNs follow-up.
 
 The two native Swift clients share one cross-platform layer — models, the REST/ACP-WebSocket clients, the design system and chat-block views, voice, and Live Activity attributes — through the `clients/RookKit` Swift package, so they stay protocol- and design-consistent with a single source of truth.
 
