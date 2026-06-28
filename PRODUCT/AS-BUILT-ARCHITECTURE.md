@@ -161,7 +161,7 @@ An **environment** is a context the user is currently "in", identified as:
 Examples:
 
 - `web:<host>/<path>` (browser URL-derived site/page context)
-- `demo:demo`
+- `web:example.com`
 - `app:<bundleId>` (macOS menu bar app — frontmost Mac app identity)
 - `app:md.obsidian/<vault>` (macOS menu bar app — Obsidian vault context)
 - `web:<host>/<path>` (macOS menu bar app — active browser URL, protocol/query stripped)

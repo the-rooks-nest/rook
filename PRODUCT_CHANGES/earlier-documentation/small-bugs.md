@@ -1,3 +1,0 @@
-- When restarting a PiAgent that had "thinking" in the last session, none of the thinking from last session is sent to the new session. This might not be an issue in this code base. It could be an issue in pi itself, or in the adapter to make pi talk ACP (which we should probably consider vendoring or replacing).
-- ClaudeAgent has empty thinking blocks.
-- Thinking blocks have empty newline at the end

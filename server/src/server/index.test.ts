@@ -363,8 +363,8 @@ describe("server", () => {
     const socket = await openWebSocket(`${baseUrl.replace("http", "ws")}/api/ws?sessionId=s-mock`);
 
     const offerPromise = collectJsonMessages(socket, 1);
-    const register = await app.inject({ method: "POST", url: "/api/environments/register", payload: { id: "demo:demo", sourceName: "Demo" } });
-    expect(register.json()).toEqual({ ok: true, id: "demo:demo" });
+    const register = await app.inject({ method: "POST", url: "/api/environments/register", payload: { id: "web:example.com", sourceName: "Example" } });
+    expect(register.json()).toEqual({ ok: true, id: "web:example.com" });
     const [offer] = await offerPromise;
     expect(offer).toMatchObject({
       jsonrpc: "2.0",
@@ -373,14 +373,14 @@ describe("server", () => {
         update: {
           sessionUpdate: "_rookery_environment_event",
           kind: "environment_offer_available",
-          payload: { environmentId: "demo:demo", sourceName: "Demo" },
+          payload: { environmentId: "web:example.com", sourceName: "Example" },
         },
       },
     });
 
     // Accepting enters the env (entered event) and resolves the offer (resolved event).
     const resolvedPromise = collectJsonMessages(socket, 2);
-    const decision = await app.inject({ method: "POST", url: "/api/environments/decision", payload: { environmentId: "demo:demo", decision: "accept" } });
+    const decision = await app.inject({ method: "POST", url: "/api/environments/decision", payload: { environmentId: "web:example.com", decision: "accept" } });
     expect(decision.statusCode).toBe(200);
     const messages = await resolvedPromise;
     expect(messages.some((m) => m.params?.update?.sessionUpdate === "_rookery_environment_event" && m.params?.update?.kind === "environment_offer_resolved" && m.params?.update?.payload?.decision === "approved")).toBe(true);
@@ -391,9 +391,9 @@ describe("server", () => {
 
   it("validates environment decision input", async () => {
     const app = await buildServer({ enableClient: false, environmentDecisionStoreLocation: ":memory:" });
-    const bad = await app.inject({ method: "POST", url: "/api/environments/decision", payload: { environmentId: "demo:demo", decision: "maybe" } });
+    const bad = await app.inject({ method: "POST", url: "/api/environments/decision", payload: { environmentId: "web:example.com", decision: "maybe" } });
     expect(bad.statusCode).toBe(400);
-    const unreg = await app.inject({ method: "POST", url: "/api/environments/unregister", payload: { id: "demo:demo" } });
+    const unreg = await app.inject({ method: "POST", url: "/api/environments/unregister", payload: { id: "web:example.com" } });
     expect(unreg.statusCode).toBe(200);
     await app.close();
   });
@@ -403,33 +403,33 @@ describe("server", () => {
     const register = await app.inject({
       method: "POST",
       url: "/api/environments/register",
-      payload: { id: "demo:demo" },
+      payload: { id: "web:example.com" },
     });
     expect(register.statusCode).toBe(200);
 
-    const preview = await app.inject({ method: "GET", url: "/api/environments/preview?environmentId=demo:demo" });
+    const preview = await app.inject({ method: "GET", url: "/api/environments/preview?environmentId=web:example.com" });
     expect(preview.statusCode).toBe(200);
     const body = preview.json() as { environmentId: string; skills: Array<{ id: string; files: Record<string, string> }> };
-    expect(body.environmentId).toBe("demo:demo");
+    expect(body.environmentId).toBe("web:example.com");
     expect(body.skills.some((skill) => skill.id === "testing-fixture" && skill.files["testing-fixture/SKILL.md"]?.includes("testing purposes"))).toBe(true);
 
     await app.close();
   });
 
-  it("returns wikipedia environment skill previews from the repository", async () => {
+  it("returns nested environment skill previews from the repository", async () => {
     const app = await buildServer({ enableClient: false });
     const register = await app.inject({
       method: "POST",
       url: "/api/environments/register",
-      payload: { id: "web:en.wikipedia.org" },
+      payload: { id: "web:example.com/stuff" },
     });
     expect(register.statusCode).toBe(200);
 
-    const preview = await app.inject({ method: "GET", url: "/api/environments/preview?environmentId=web:en.wikipedia.org" });
+    const preview = await app.inject({ method: "GET", url: "/api/environments/preview?environmentId=web:example.com/stuff" });
     expect(preview.statusCode).toBe(200);
     const body = preview.json() as { environmentId: string; skills: Array<{ id: string }> };
-    expect(body.environmentId).toBe("web:en.wikipedia.org");
-    expect(body.skills.some((skill) => skill.id === "wikipedia-discovery")).toBe(true);
+    expect(body.environmentId).toBe("web:example.com/stuff");
+    expect(body.skills.some((skill) => skill.id === "testing-fixture-child")).toBe(true);
 
     await app.close();
   });
