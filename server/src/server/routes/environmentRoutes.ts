@@ -2,12 +2,14 @@ import type { FastifyInstance } from "fastify";
 import type { EnvironmentManager } from "../environment/EnvironmentManager.js";
 import type { EnvironmentDecision } from "../environment/types.js";
 import type { EnvironmentIdentifier } from "../location/EnvironmentIdentifier.js";
+import type { LocationRegistrar } from "../location/LocationRegistrar.js";
 import type { IdentifyAvailableRequest, IdentifySource } from "../../shared/environment.js";
 
 export async function registerEnvironmentRoutes(
   app: FastifyInstance,
   environmentManager: EnvironmentManager,
   environmentIdentifier: EnvironmentIdentifier,
+  locationRegistrar: LocationRegistrar,
 ): Promise<void> {
   app.post<{ Body: { id?: unknown; metadata?: unknown; canonicalSourceUrl?: unknown; sourceName?: unknown } }>("/api/environments/register", async (request, reply) => {
     const id = request.body?.id;
@@ -89,6 +91,12 @@ export async function registerEnvironmentRoutes(
     };
 
     const candidates = await environmentIdentifier.identifyAvailableEnvironments(identifyRequest);
+    // Make the identified set available to the SessionRoom/agent (best-effort).
+    try {
+      await locationRegistrar.sync(candidates);
+    } catch (error) {
+      app.log.warn(`location registration failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
     return { candidates };
   });
 }

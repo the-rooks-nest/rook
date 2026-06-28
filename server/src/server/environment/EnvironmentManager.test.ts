@@ -68,6 +68,23 @@ describe("EnvironmentManager", () => {
     expect(listener.onEnvironmentEntered).not.toHaveBeenCalled();
   });
 
+  it("surfaces an otherwise skill-less env via injected extraSkillPaths", async () => {
+    const manager = newManager([]); // repo has no skills
+    const listener = mockListener();
+    manager.subscribe("s1", listener);
+
+    await manager.registerAvailableEnvironment(
+      { id: "loc:cicis.com/tn-1-main", metadata: {} },
+      { sourceName: "Cicis" },
+      ["/tmp/location-context"],
+    );
+    // accept -> enters with the injected skill path.
+    manager.decideEnvironment("loc:cicis.com/tn-1-main", "accept");
+
+    expect(listener.onEnvironmentOffered).toHaveBeenCalledWith("loc:cicis.com/tn-1-main", { sourceName: "Cicis" });
+    expect(listener.onEnvironmentEntered).toHaveBeenCalledWith("loc:cicis.com/tn-1-main", ["/tmp/location-context"]);
+  });
+
   it("does NOT re-offer a previously-known environment once it has been unregistered", async () => {
     const manager = newManager();
     await manager.registerAvailableEnvironment({ id: "web:wikipedia", metadata: {} });

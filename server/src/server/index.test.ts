@@ -390,6 +390,31 @@ describe("server", () => {
     await app.close();
   });
 
+  it("registers the identified location and auto-enters the current env over the websocket", async () => {
+    const app = await buildServer({ enableClient: false, environmentDecisionStoreLocation: ":memory:", poiProvider: new StubPoiLookupProvider() });
+    const baseUrl = await listen(app);
+    await app.inject({ method: "POST", url: "/api/agent/start", payload: { agent: "PiAgent" } });
+    const socket = await openWebSocket(`${baseUrl.replace("http", "ws")}/api/ws?sessionId=s-mock`);
+
+    const eventsPromise = collectJsonMessages(socket, 3);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/environments/identify-available",
+      payload: { latitude: 37.3318, longitude: -122.0312, isStationary: true },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const currentId = "loc:target.com/123-main-st-springfield-il/store-1842";
+    const events = await eventsPromise;
+    const kinds = events.map((m) => m.params?.update?.kind);
+    // current is offered (sourceName carried) then auto-entered.
+    expect(events.some((m) => m.params?.update?.kind === "environment_offer_available" && m.params?.update?.payload?.environmentId === currentId && m.params?.update?.payload?.sourceName === "Target")).toBe(true);
+    expect(kinds).toContain("environment_entered");
+
+    socket.close();
+    await app.close();
+  });
+
   it("validates environment decision input", async () => {
     const app = await buildServer({ enableClient: false, environmentDecisionStoreLocation: ":memory:" });
     const bad = await app.inject({ method: "POST", url: "/api/environments/decision", payload: { environmentId: "demo:demo", decision: "maybe" } });

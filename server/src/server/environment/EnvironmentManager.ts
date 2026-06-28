@@ -51,8 +51,12 @@ export class EnvironmentManager {
 
   // --- Availability lifecycle -------------------------------------------------
 
-  /** A provider reports the user is now "in" this environment. Applies to all open rooms. */
-  async registerAvailableEnvironment(env: EnvironmentRecord, info: EnvironmentOfferInfo = {}): Promise<void> {
+  /**
+   * A provider reports the user is now "in" this environment. Applies to all open rooms.
+   * `extraSkillPaths` are merged into the leaf env's skills (used to inject a
+   * synthesized location-context bundle so a skill-less env still carries metadata).
+   */
+  async registerAvailableEnvironment(env: EnvironmentRecord, info: EnvironmentOfferInfo = {}, extraSkillPaths: string[] = []): Promise<void> {
     const impliedIds = this.impliedEnvironmentIds(env.id);
     const existing = this.directRegistrations.get(env.id);
     if (existing) {
@@ -66,7 +70,9 @@ export class EnvironmentManager {
       this.availableRefCounts.set(impliedId, nextCount);
       if (nextCount > 1) continue;
 
-      const skillPaths = await this.repository.getSkillPaths(impliedId);
+      const repoSkillPaths = await this.repository.getSkillPaths(impliedId);
+      // Only the leaf (the registered id itself) gets the injected extra skills.
+      const skillPaths = impliedId === env.id ? [...new Set([...repoSkillPaths, ...extraSkillPaths])] : repoSkillPaths;
       this.available.set(impliedId, {
         record: { id: impliedId, metadata: env.metadata },
         skillPaths,

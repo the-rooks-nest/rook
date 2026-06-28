@@ -9,6 +9,7 @@ import { LocalEnvironmentRepository } from "./environment/LocalEnvironmentReposi
 import { EnvironmentIdentifier } from "./location/EnvironmentIdentifier.js";
 import { MockBuildingSkillSuggester } from "./location/BuildingSkillSuggester.js";
 import { PtilesPoiLookupProvider } from "./location/PtilesPoiLookupProvider.js";
+import { LocationRegistrar } from "./location/LocationRegistrar.js";
 import type { FetchRange } from "./location/ptiles/PtilesRangeSource.js";
 import type { PoiLookupProvider } from "./location/PoiLookupProvider.js";
 import { REPO_ROOT } from "./paths.js";
@@ -52,6 +53,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
     repository: environmentRepository,
     skillSuggester: new MockBuildingSkillSuggester(),
   });
+  const locationRegistrar = new LocationRegistrar(environmentManager);
   const roomManager = new SessionRoomManager({
     idleTimeoutMs: options.roomIdleTimeoutMs,
     onRoomRemoved: (sessionId) => environmentManager.unsubscribe(sessionId),
@@ -65,7 +67,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
 
   await registerAgentRoutes(app, { roomManager, environmentManager });
   await registerPtilesProxyRoutes(app);
-  await registerEnvironmentRoutes(app, environmentManager, environmentIdentifier);
+  await registerEnvironmentRoutes(app, environmentManager, environmentIdentifier, locationRegistrar);
   await registerWebsocketRoute(app, roomManager);
 
   return app;
