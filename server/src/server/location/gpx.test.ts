@@ -1,6 +1,12 @@
 // @vitest-environment node
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parseGpxPoints } from "./gpx.js";
+
+const FIXTURE_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "test-fixtures", "gpx");
+const fixtureFiles = readdirSync(FIXTURE_DIR).filter((f) => f.endsWith(".gpx"));
 
 describe("parseGpxPoints", () => {
   it("extracts lat/lon from trkpt/wpt/rtept tags (self-closing or with children)", () => {
@@ -29,5 +35,22 @@ describe("parseGpxPoints", () => {
 
   it("returns [] for a GPX with no points", () => {
     expect(parseGpxPoints("<gpx><trk><trkseg></trkseg></trk></gpx>")).toEqual([]);
+  });
+});
+
+describe("parseGpxPoints on real OSM traces (NC/TN fixtures)", () => {
+  it("has fixtures", () => {
+    expect(fixtureFiles.length).toBeGreaterThan(0);
+  });
+
+  it.each(fixtureFiles)("parses %s into many southeast-US points", (file) => {
+    const points = parseGpxPoints(readFileSync(path.join(FIXTURE_DIR, file), "utf8"));
+    expect(points.length).toBeGreaterThan(100);
+    for (const p of points) {
+      expect(p.lat).toBeGreaterThan(30);
+      expect(p.lat).toBeLessThan(37);
+      expect(p.lon).toBeGreaterThan(-91);
+      expect(p.lon).toBeLessThan(-77);
+    }
   });
 });
