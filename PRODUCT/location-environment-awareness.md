@@ -128,7 +128,38 @@ by **following the injected website link**. Caveat: ptiles supplies the website 
 live hours, so hours (and anything not in the metadata) require the agent to fetch the
 site.
 
-## 5. Follow-up work
+## 5. Dwell tuning & data validation
+
+Validated against real OSM GPS traces (pedestrian/cycling/vehicle, NC/TN) via
+`server/scripts/dwell-analysis.ts` (corpus in `validation-traces.manifest.json` +
+`fetch-validation-traces.ts`; committed fixtures in `location/test-fixtures/gpx`).
+
+Findings (replaying each timestamped point through the matcher and measuring per-place
+**dwell** = the time span of consecutive points matched to one place):
+- **Pass-throughs dominate continuous motion.** Vehicle traces: ~95% of detections are
+  **<20 s** (most <5 s, 8–12 m/s) — driving past a roadside business. Cycling: ~93% <20 s.
+- **Real visits separate cleanly:** they are **minutes-long at ~0 m/s** (e.g. a 28-min
+  gas-station stop, a 6-min in-building ATM), vs the brief, fast drive-bys.
+- The per-point identify had **no dwell gate**, so a continuous location stream would
+  register dozens of fly-bys.
+
+Tuning applied: **registration is now gated on the request's own dwell/motion signal**
+(`isDwellArrival` in `LocationRegistrar` — `MIN_DWELL_SECONDS = 30`,
+`STATIONARY_SPEED_MPS = 1.5`). The identify endpoint still **returns** the candidate list,
+but only **registers** the location into the SessionRoom/agent on a stationary/dwelled/slow
+arrival; clearly-moving requests register nothing. This composes with the on-device CLVisit
+gate (`LocationProvider.arrivalContext`) and works for both a parked car (0 m/s, sustained)
+and someone standing in a store. No motion signal ⇒ permissive (back-compat).
+
+> **Data limitation — building index.** Building-footprint matching needs a per-state
+> ptiles `buildings_v8` index. A survey found **only NC and TN have a valid index today**;
+> every other surveyed state ships an empty index (`indexLength=4`, count 0) despite having
+> blocks, so in-building precision (inside-vs-near, same-building grouping) silently
+> degrades to the 10 m business radius there (business identification still works). The
+> provider now logs a one-time warning per such state. Fix is upstream: re-export the
+> `buildings_v8` files with proper indexes.
+
+## 6. Follow-up work
 
 - **Skills at scale (#22).** Author `loc:` skills at the operator/domain level so every
   branch inherits them hierarchically; replace the mocked suggester.

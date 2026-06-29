@@ -98,9 +98,13 @@ export async function registerEnvironmentRoutes(
     };
 
     const candidates = await environmentIdentifier.identifyAvailableEnvironments(identifyRequest);
-    // Make the identified set available to the SessionRoom/agent (best-effort).
+    // Make the identified set available to the SessionRoom/agent on a real dwell (best-effort).
     try {
-      await locationRegistrar.sync(candidates);
+      await locationRegistrar.sync(candidates, {
+        isStationary: identifyRequest.isStationary,
+        dwellSeconds: identifyRequest.dwellSeconds,
+        speedMetersPerSecond: identifyRequest.speedMetersPerSecond,
+      });
     } catch (error) {
       app.log.warn(`location registration failed: ${error instanceof Error ? error.message : String(error)}`);
     }

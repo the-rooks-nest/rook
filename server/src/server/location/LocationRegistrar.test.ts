@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 import type { EnvironmentCandidate } from "../../shared/environment.js";
-import { LocationRegistrar, type LocationEnvironmentSink } from "./LocationRegistrar.js";
+import { isDwellArrival, LocationRegistrar, type LocationEnvironmentSink } from "./LocationRegistrar.js";
 
 function sink() {
   return {
@@ -73,5 +73,36 @@ describe("LocationRegistrar", () => {
     s.unregister.mockClear();
     await reg.sync([]);
     expect(s.unregister).toHaveBeenCalledWith("loc:a/1");
+  });
+
+  it("does not register a drive-by (moving, not dwelled)", async () => {
+    const s = sink();
+    const reg = new LocationRegistrar(s, writeStub);
+    await reg.sync([cand("loc:a/1")], { isStationary: false, speedMetersPerSecond: 20, dwellSeconds: 2 });
+    expect(s.registerAvailableEnvironment).not.toHaveBeenCalled();
+  });
+
+  it("registers a real dwell, then drops it when moving away", async () => {
+    const s = sink();
+    const reg = new LocationRegistrar(s, writeStub);
+    await reg.sync([cand("loc:a/1")], { isStationary: true });
+    expect(s.registerAvailableEnvironment).toHaveBeenCalledTimes(1);
+    await reg.sync([cand("loc:b/2")], { isStationary: false, speedMetersPerSecond: 18 });
+    expect(s.unregister).toHaveBeenCalledWith("loc:a/1");
+    expect(s.registerAvailableEnvironment).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("isDwellArrival", () => {
+  it("accepts stationary / dwelled / slow; rejects clearly moving", () => {
+    expect(isDwellArrival({ isStationary: true })).toBe(true);
+    expect(isDwellArrival({ dwellSeconds: 45 })).toBe(true);
+    expect(isDwellArrival({ speedMetersPerSecond: 0.5 })).toBe(true);
+    expect(isDwellArrival({ isStationary: false, speedMetersPerSecond: 20, dwellSeconds: 2 })).toBe(false);
+    expect(isDwellArrival({ isStationary: false })).toBe(false);
+  });
+  it("is permissive with no usable motion signal (back-compat)", () => {
+    expect(isDwellArrival(undefined)).toBe(true);
+    expect(isDwellArrival({})).toBe(true);
   });
 });

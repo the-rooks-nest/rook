@@ -14,6 +14,33 @@ export interface LocationEnvironmentSink {
 
 type ContextSkillWriter = (current: EnvironmentCandidate, nearby: EnvironmentCandidate[]) => string;
 
+/** Motion/dwell signal from the identify request, used to reject drive-by registration. */
+export interface ArrivalMotion {
+  isStationary?: boolean;
+  dwellSeconds?: number;
+  speedMetersPerSecond?: number;
+}
+
+/** Min sustained dwell (s) to treat a detection as a real visit (from trace analysis). */
+export const MIN_DWELL_SECONDS = 30;
+/** Speed (m/s) at/below which the device is "settled" (matches the client gate). */
+export const STATIONARY_SPEED_MPS = 1.5;
+
+/**
+ * Whether an identify request looks like a real arrival/dwell (vs a drive-by). Trace
+ * analysis shows visits are minutes-long at ~0 m/s while pass-throughs are brief and
+ * fast, so we register only when the device is stationary / dwelled / slow. With no
+ * usable motion signal we stay permissive (back-compat).
+ */
+export function isDwellArrival(m: ArrivalMotion | undefined, minDwellSeconds = MIN_DWELL_SECONDS, stationarySpeed = STATIONARY_SPEED_MPS): boolean {
+  if (!m) return true;
+  if (m.isStationary === true) return true;
+  if ((m.dwellSeconds ?? 0) >= minDwellSeconds) return true;
+  if (m.speedMetersPerSecond !== undefined) return m.speedMetersPerSecond <= stationarySpeed;
+  if (m.isStationary === false) return false; // explicitly moving, no other signal
+  return true; // no usable motion signal -> permissive
+}
+
 /** Build the registration metadata from a candidate (the full business record). */
 function metadataFor(c: EnvironmentCandidate, current: boolean): Record<string, unknown> {
   return {
@@ -44,15 +71,17 @@ export class LocationRegistrar {
     private readonly writeContextSkill: ContextSkillWriter = writeLocationContextSkill,
   ) {}
 
-  async sync(candidates: EnvironmentCandidate[]): Promise<void> {
-    const nextIds = candidates.map((c) => c.environmentId);
+  async sync(candidates: EnvironmentCandidate[], motion?: ArrivalMotion): Promise<void> {
+    // Only make a location available to the agent on a real dwell, not a drive-by.
+    const dwell = isDwellArrival(motion);
+    const nextIds = dwell ? candidates.map((c) => c.environmentId) : [];
     if (sameSet(nextIds, this.registeredIds)) return; // no change -> avoid agent churn
 
     // Replace the whole prior set.
     for (const id of this.registeredIds) this.manager.unregister(id);
     this.registeredIds = [];
 
-    if (candidates.length === 0) return; // left the area
+    if (!dwell || candidates.length === 0) return; // moving through, or left the area
 
     const [current, ...nearby] = candidates;
     const contextDir = this.writeContextSkill(current, nearby);

@@ -117,6 +117,11 @@ export class PtilesPoiLookupProvider implements PoiLookupProvider {
       const buildings = new PtilesRangeSource(`${abbrev}.buildings_v8.ptiles`, this.fetchRange);
       const business = new PtilesRangeSource(`${abbrev}.business.ptiles`, this.fetchRange);
       await Promise.all([buildings.init(), business.init()]);
+      // Surface the upstream data gap: several states ship an empty buildings index, so
+      // in-building matching silently degrades to the nearby-business radius there.
+      if ((await buildings.getIndex()).entries.length === 0) {
+        console.warn(`[ptiles] ${abbrev}.buildings_v8.ptiles has an empty index — in-building matching disabled for ${abbrev} (falling back to the nearby-business radius).`);
+      }
       sources = { buildings, business };
       this.stateSources.set(abbrev, sources);
     }
