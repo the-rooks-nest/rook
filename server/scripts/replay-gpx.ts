@@ -6,7 +6,9 @@
  * LocationRegistrar -> context skill) by POSTing each trackpoint directly.
  *
  * Usage (server must be running, e.g. `npm run dev`):
- *   npm run replay:gpx -- scripts/fixtures/sample-route.gpx [http://127.0.0.1:3000]
+ *   npm run replay:gpx -- <file.gpx> [baseUrl] [stride]
+ * `stride` replays every Nth trackpoint (default 1) — useful for dense GPS traces
+ * (e.g. a Garmin run logs a point per second).
  */
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -28,13 +30,15 @@ async function currentContextName(): Promise<string | null> {
 async function main(): Promise<void> {
   const gpxPath = process.argv[2];
   const baseUrl = process.argv[3] ?? "http://127.0.0.1:3000";
+  const stride = Math.max(1, Number(process.argv[4] ?? 1) || 1);
   if (!gpxPath) {
-    console.error("usage: npm run replay:gpx -- <file.gpx> [baseUrl]");
+    console.error("usage: npm run replay:gpx -- <file.gpx> [baseUrl] [stride]");
     process.exit(1);
   }
 
-  const points = parseGpxPoints(await readFile(gpxPath, "utf8"));
-  console.log(`Replaying ${points.length} point(s) against ${baseUrl}\n`);
+  const all = parseGpxPoints(await readFile(gpxPath, "utf8"));
+  const points = stride > 1 ? all.filter((_, i) => i % stride === 0) : all;
+  console.log(`Replaying ${points.length} of ${all.length} point(s) (stride ${stride}) against ${baseUrl}\n`);
 
   let prevTopId: string | undefined;
   for (let i = 0; i < points.length; i++) {
