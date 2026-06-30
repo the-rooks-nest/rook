@@ -35,32 +35,38 @@ final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDeleg
     /// Speed (m/s) at or below which we treat the device as effectively settled.
     private let stationarySpeedThreshold: Double = 1.5
 
-    /// Motion activity (used only to reject driving-like arrivals). The OS Motion prompt
-    /// is requested as part of the "Always" location upgrade — never on first launch.
+    /// Motion activity (used only to reject driving-like arrivals). Requested via a separate
+    /// opt-in button in Settings — never on first launch, never bundled with location.
     private let motionManager = CMMotionActivityManager()
     private var latestActivityIsAutomotive = false
-    /// Set transiently when we actively call `requestAlwaysAuthorization`, so the Motion
-    /// prompt fires on the resulting Always grant (and not on a launch-time callback).
-    private var pendingMotionFromUpgrade = false
     private let motionRequestedKey = "RookMotionRequested"
-    private var motionRequested: Bool {
-        get { UserDefaults.standard.bool(forKey: motionRequestedKey) }
-        set { UserDefaults.standard.set(newValue, forKey: motionRequestedKey) }
+    /// Whether the user has opted into motion (persisted). Published so the Settings button
+    /// can hide once it's been used.
+    @Published private(set) var motionRequested: Bool {
+        didSet { UserDefaults.standard.set(motionRequested, forKey: motionRequestedKey) }
     }
+
+    /// Whether CoreMotion activity is available on this device (false in the Simulator).
+    var motionAvailable: Bool { CMMotionActivityManager.isActivityAvailable() }
 
     override init() {
         authorizationStatus = manager.authorizationStatus
+        motionRequested = UserDefaults.standard.bool(forKey: motionRequestedKey)
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
-        // Resume motion updates for users who already granted it (no new prompt).
+        // Resume motion updates for users who already opted in (no new prompt).
         if motionRequested { startMotionUpdatesIfAvailable() }
     }
 
+    /// Opt into motion-based drive-by filtering. Triggers the OS Motion prompt the first time.
+    func requestMotion() {
+        if startMotionUpdatesIfAvailable() { motionRequested = true }
+    }
+
     /// Start CoreMotion activity updates. Calling this is what triggers the OS Motion
-    /// permission prompt the first time, so only call it from the Always-upgrade path.
-    /// Returns false when activity isn't available (e.g. the iOS Simulator never supports
-    /// it), so callers don't mark the request as consumed and a real device can retry.
+    /// permission prompt the first time. Returns false when activity isn't available
+    /// (e.g. the iOS Simulator never supports it), so callers don't mark it consumed.
     @discardableResult
     private func startMotionUpdatesIfAvailable() -> Bool {
         guard CMMotionActivityManager.isActivityAvailable() else { return false }
@@ -84,7 +90,6 @@ final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDeleg
         if authorizationStatus == .notDetermined {
             manager.requestWhenInUseAuthorization()
         } else if authorizationStatus == .authorizedWhenInUse {
-            pendingMotionFromUpgrade = true
             manager.requestAlwaysAuthorization()
         }
     }
@@ -147,17 +152,6 @@ final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDeleg
             if status == .authorizedAlways {
                 manager.allowsBackgroundLocationUpdates = true
                 manager.startMonitoringVisits()
-                // Granting Always is the background-arrival flow where drive-by
-                // filtering matters: request Motion here as one step (only when the
-                // Always grant followed an active upgrade, never a launch callback).
-                // Only mark consumed if updates actually started — the Simulator has no
-                // motion activity, so a later real device run still gets its prompt.
-                if self.pendingMotionFromUpgrade && !self.motionRequested {
-                    if self.startMotionUpdatesIfAvailable() {
-                        self.pendingMotionFromUpgrade = false
-                        self.motionRequested = true
-                    }
-                }
             }
             if status == .authorizedAlways || status == .authorizedWhenInUse {
                 // Grab an initial fix so the "save a place" UI has coordinates
@@ -168,7 +162,6 @@ final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDeleg
                 // shows the upgrade prompt once; PlacesScreen also offers a
                 // manual upgrade if the user declines here.
                 if !wasAuthorized && status == .authorizedWhenInUse {
-                    self.pendingMotionFromUpgrade = true
                     manager.requestAlwaysAuthorization()
                 }
             }

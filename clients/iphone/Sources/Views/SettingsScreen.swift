@@ -120,7 +120,7 @@ struct SettingsScreen: View {
                 statusChip(text: locationStatusText, tint: locationStatusTint)
             }
 
-            Text("Rook loads a place's skills when you arrive. Background arrivals (app closed) need \u{201C}Always\u{201D}, which also enables motion so Rook can ignore places you're just driving past.")
+            Text("Rook loads a place's skills when you arrive. Background arrivals (app closed) need \u{201C}Always\u{201D}.")
                 .font(.caption)
                 .foregroundStyle(PanelPalette.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -142,6 +142,17 @@ struct SettingsScreen: View {
                 Text("Location is denied — enable it in iOS Settings → Rook → Location.")
                     .font(.caption2)
                     .foregroundStyle(PanelPalette.warning)
+            }
+
+            if model.locationProvider.authorizationStatus == .authorizedAlways,
+               model.locationProvider.motionAvailable,
+               !model.locationProvider.motionRequested {
+                CompactActionButton(title: "Use Motion to Ignore Drive-Bys", systemImage: "figure.walk.motion", tint: PanelPalette.accent, prominence: .subtle, helpText: "") {
+                    model.locationProvider.requestMotion()
+                }
+                Text("Lets Rook skip places you only drive past.")
+                    .font(.caption2)
+                    .foregroundStyle(PanelPalette.textMuted)
             }
 
             Text("Define places with the map-pin button on the agent list.")

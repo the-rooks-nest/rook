@@ -59,9 +59,8 @@ stationary/dwelled/slow arrival; clearly-moving requests register nothing. No mo
 ⇒ permissive.
 
 On the phone, `CLLocation.speed` plus a CoreMotion automotive check (`arrivalContext`) also
-gate the on-device trigger. The Motion permission is requested only as part of granting
-**Always** location (never on first launch); without it the speed + server dwell gate still
-apply.
+gate the on-device trigger. Motion is a **separate opt-in button in Settings** (never
+requested on first launch); without it the speed + server dwell gate still apply.
 
 ## Follow-up work
 
