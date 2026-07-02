@@ -124,7 +124,7 @@ Then launch with:
 ./scripts/run-rook.sh mac phone
 ```
 
-The launcher passes the server URL and auth token through to the iPhone app.
+The launcher passes the server URL and auth token through to the iPhone app. Keep the phone unlocked while the script installs and opens the app; otherwise iOS will deny the launch request.
 
 ### Mac + iPhone with hostname-based remote access
 

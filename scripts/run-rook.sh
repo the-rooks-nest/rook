@@ -625,11 +625,19 @@ EOF
   else
     launch_env="{\"ROOK_SERVER_BASE_URL\":$(json_escape "$url")}"
   fi
-  xcrun devicectl device process launch \
+  local launch_log="$RUN_ROOT/rook-phone-launch.log"
+  if ! xcrun devicectl device process launch \
     --device "$phone_udid" \
     --terminate-existing \
     -e "$launch_env" \
-    com.rookery.Rook >/dev/null
+    com.rookery.Rook >"$launch_log" 2>&1; then
+    if grep -qiE 'Locked|could not be unlocked|RequestDenied' "$launch_log"; then
+      cat "$launch_log" >&2 || true
+      die "iPhone launch failed because $phone_name is locked; unlock the phone and run ./scripts/run-rook.sh phone again"
+    fi
+    tail -n 80 "$launch_log" >&2 || true
+    die "iPhone launch failed (full log: $launch_log)"
+  fi
 
   cat <<EOF
 [run-rook] launched on $phone_name

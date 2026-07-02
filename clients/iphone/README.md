@@ -141,7 +141,7 @@ Fast paths from the repo root:
 
 `run-rook.sh sim` starts the server if needed, regenerates the Xcode project from `project.yml`, rebuilds incrementally, installs the fresh app into the selected simulator, and launches it with `ROOK_SERVER_BASE_URL=http://127.0.0.1:3000`.
 
-`run-rook.sh phone` does the same for a paired physical iPhone, using `ROOK_REMOTE_HOSTNAME` or `ROOK_BIND_IP` to determine a server address your phone can reach. The server itself still binds localhost for the Mac app; `ROOK_BIND_IP` adds the second remote listener. It intentionally does **not** hardcode a development team into `project.yml`; pass `--team` / `ROOK_IOS_DEVELOPMENT_TEAM` when needed, or let the script auto-detect your local team for personal use.
+`run-rook.sh phone` does the same for a paired physical iPhone, using `ROOK_REMOTE_HOSTNAME` or `ROOK_BIND_IP` to determine a server address your phone can reach. The server itself still binds localhost for the Mac app; `ROOK_BIND_IP` adds the second remote listener. It intentionally does **not** hardcode a development team into `project.yml`; pass `--team` / `ROOK_IOS_DEVELOPMENT_TEAM` when needed, or let the script auto-detect your local team for personal use. Keep the phone unlocked when the launcher installs and opens the app; otherwise iOS denies the launch request.
 
 Manual steps:
 
