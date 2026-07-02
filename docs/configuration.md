@@ -1,5 +1,7 @@
 # Configuration
 
+For repo setup, `.env`, server binding, and remote-access notes, see [Setup](./setup.md).
+
 Rook stores user configuration in `~/.rook` by default.
 
 ## Config directory

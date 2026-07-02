@@ -6,6 +6,7 @@ import SwiftUI
 enum ServerState: Equatable {
     case unknown
     case offline
+    case unauthorized
     case online
 }
 
@@ -16,6 +17,7 @@ enum ServerState: Equatable {
 final class RookModel: ObservableObject {
     // Server / control plane
     @Published var serverState: ServerState = .unknown
+    @Published var serverDiagnostic = ""
     @Published var agents: [AgentDefinition] = []
     @Published var agentsError = ""
 
@@ -71,9 +73,10 @@ final class RookModel: ObservableObject {
     // Live Activity (Dynamic Island)
     private var liveActivity: Activity<RookActivityAttributes>?
 
-    // Server address (configurable for a physical device on the LAN; the
-    // simulator reaches the Mac's localhost directly).
+    // Server address + optional bearer token. The simulator usually reaches the
+    // local Mac directly; a physical device often uses a remote-reachable URL.
     @Published var baseURLString: String
+    @Published var authTokenString: String
 
     private(set) var api: RookAPI
     private let socket = AcpSocket()
@@ -98,8 +101,19 @@ final class RookModel: ObservableObject {
         } else {
             urlString = "http://127.0.0.1:3000"
         }
+        let envToken = ProcessInfo.processInfo.environment["ROOK_AUTH_TOKEN"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let storedToken = UserDefaults.standard.string(forKey: "RookAuthToken")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let authToken = (envToken?.isEmpty == false ? envToken : storedToken) ?? ""
+        if let envToken, !envToken.isEmpty, storedToken != envToken {
+            UserDefaults.standard.set(envToken, forKey: "RookAuthToken")
+        }
+        let finalURL = URL(string: urlString) ?? URL(string: "http://127.0.0.1:3000")!
         baseURLString = urlString
-        api = RookAPI(baseURL: URL(string: urlString) ?? URL(string: "http://127.0.0.1:3000")!)
+        authTokenString = authToken
+        api = RookAPI(
+            baseURL: finalURL,
+            authToken: authToken
+        )
 
         socket.onEvent = { [weak self] event in
             self?.handleSocketEvent(event)
@@ -360,14 +374,17 @@ final class RookModel: ObservableObject {
         }
     }
 
-    func setBaseURL(_ string: String) {
+    func setServerConnection(baseURL string: String, authToken token: String) {
         let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed), url.scheme != nil else {
             return
         }
+        let trimmedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
         baseURLString = trimmed
+        authTokenString = trimmedToken
         UserDefaults.standard.set(trimmed, forKey: "RookServerBaseURL")
-        api = RookAPI(baseURL: url)
+        UserDefaults.standard.set(trimmedToken, forKey: "RookAuthToken")
+        api = RookAPI(baseURL: url, authToken: trimmedToken)
         socket.disconnect()
         currentSession = nil
         Task { await refreshHealth() }
@@ -376,17 +393,25 @@ final class RookModel: ObservableObject {
     // MARK: - Server lifecycle
 
     func refreshHealth() async {
-        let healthy = await api.health()
-        if healthy {
+        switch await api.healthResult() {
+        case .ok:
             let wasOnline = serverState == .online
             serverState = .online
+            serverDiagnostic = ""
             if !wasOnline {
                 await loadAgents()
                 reannouncePlaceEnvironment()
                 await autoResumeRecentSessionIfNeeded()
             }
-        } else {
+        case .unauthorized:
+            serverState = .unauthorized
+            serverDiagnostic = "Authorization header was rejected."
+        case .httpStatus(let code):
             serverState = .offline
+            serverDiagnostic = "HTTP \(code)"
+        case .transportError(let message):
+            serverState = .offline
+            serverDiagnostic = message
         }
     }
 
@@ -394,6 +419,7 @@ final class RookModel: ObservableObject {
         switch serverState {
         case .online: return isRunning ? "working" : "online"
         case .offline: return "offline"
+        case .unauthorized: return "unauthorized"
         case .unknown: return "checking…"
         }
     }
@@ -401,7 +427,7 @@ final class RookModel: ObservableObject {
     var serverStatusTint: Color {
         switch serverState {
         case .online: return PanelPalette.success
-        case .offline: return PanelPalette.danger
+        case .offline, .unauthorized: return PanelPalette.danger
         case .unknown: return PanelPalette.secondaryText
         }
     }
@@ -531,7 +557,7 @@ final class RookModel: ObservableObject {
         if resumed {
             appendBlock(.system(text: "Resumed session — earlier messages aren't replayed."))
         }
-        socket.connect(sessionId: session.id, webSocketURL: api.webSocketURL)
+        socket.connect(sessionId: session.id, request: api.webSocketRequest(sessionId: session.id))
         updateLiveActivity()
     }
 
@@ -660,7 +686,7 @@ final class RookModel: ObservableObject {
                 guard !Task.isCancelled else {
                     return
                 }
-                socket.connect(sessionId: session.id, webSocketURL: api.webSocketURL)
+                socket.connect(sessionId: session.id, request: api.webSocketRequest(sessionId: session.id))
                 reconnecting = false
                 deliverNextQueuedIfIdle()
             } else if !Task.isCancelled {

@@ -27,7 +27,7 @@ struct AgentPickerScreen: View {
 
             PlaceCaption(model: model)
 
-            if model.serverState == .offline {
+            if model.serverState == .offline || model.serverState == .unauthorized {
                 offlineCard
             }
 
@@ -135,11 +135,20 @@ struct AgentPickerScreen: View {
 
     private var offlineCard: some View {
         PanelMessageView(
-            systemImage: "bolt.slash.fill",
+            systemImage: model.serverState == .unauthorized ? "lock.slash.fill" : "bolt.slash.fill",
             tint: PanelPalette.danger,
-            text: "Server unreachable at \(model.baseURLString). Run `npm run dev` on the Mac; tap the gear to change the address."
+            text: model.serverState == .unauthorized
+                ? "Server requires authorization at \(model.baseURLString). Check the bearer token in Settings."
+                : offlineText
         )
         .padding(16)
+    }
+
+    private var offlineText: String {
+        if model.serverDiagnostic.isEmpty {
+            return "Server unreachable at \(model.baseURLString). Run `npm run dev` on the Mac; tap the gear to change the address."
+        }
+        return "Server unreachable at \(model.baseURLString). \(model.serverDiagnostic)"
     }
 }
 

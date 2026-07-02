@@ -448,7 +448,7 @@ final class RookMacModel: ObservableObject {
         pendingPermission = nil
         lastStopReason = nil
         enteredEnvironments = []
-        socket.connect(sessionId: session.id, webSocketURL: api.webSocketURL)
+        socket.connect(sessionId: session.id, request: api.webSocketRequest(sessionId: session.id))
         if switchToChat {
             panelMode = .chat
         }
@@ -628,7 +628,7 @@ final class RookMacModel: ObservableObject {
                 guard !Task.isCancelled else {
                     return
                 }
-                socket.connect(sessionId: session.id, webSocketURL: api.webSocketURL)
+                socket.connect(sessionId: session.id, request: api.webSocketRequest(sessionId: session.id))
                 reconnecting = false
                 deliverNextQueuedIfIdle()
             } else if !Task.isCancelled {

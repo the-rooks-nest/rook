@@ -21,10 +21,13 @@ import { SessionRoomManager } from "./realtime/SessionRoomManager.js";
 import { registerAgentRoutes } from "./routes/agentRoutes.js";
 import { registerEnvironmentRoutes } from "./routes/environmentRoutes.js";
 import { registerWebsocketRoute } from "./routes/websocketRoute.js";
+import { ServerAuth } from "./auth.js";
+import { startRemoteProxy } from "./remoteProxy.js";
 
 dotenv.config({ path: path.join(REPO_ROOT, ".env") });
 
-const host = process.env.HOST ?? "0.0.0.0";
+const loopbackHost = "127.0.0.1";
+const remoteBindIp = process.env.ROOK_BIND_IP ?? process.env.ROOK_TAILSCALE_IP;
 const port = Number(process.env.PORT ?? 3000);
 
 export interface BuildServerOptions {
@@ -35,10 +38,18 @@ export interface BuildServerOptions {
   environmentDecisionStoreLocation?: string;
   /** Override the POI lookup provider (defaults to the ptiles provider via the proxy route). */
   poiProvider?: PoiLookupProvider;
+  /** Optional bearer token for non-loopback requests. */
+  authToken?: string;
+  /** Test hook: require auth even for loopback requests. */
+  trustLoopbackWithoutAuth?: boolean;
 }
 
 export async function buildServer(options: BuildServerOptions = {}) {
   const app = fastify({ logger: options.logger ?? true });
+  const auth = new ServerAuth({
+    token: options.authToken ?? process.env.ROOK_AUTH_TOKEN,
+    trustLoopbackWithoutAuth: options.trustLoopbackWithoutAuth,
+  });
   // Programmatic repo for the synthesized location-context bundle (no extraSkillPaths).
   const locationContextRepository = new LocationContextRepository();
   const environmentRepository = new CompositeEnvironmentRepository([
@@ -65,13 +76,19 @@ export async function buildServer(options: BuildServerOptions = {}) {
 
   await app.register(websocket);
 
+  app.addHook("onRequest", async (request, reply) => {
+    const authorization = auth.authorizeRequest(request.raw);
+    if (authorization.ok) return;
+    reply.code(authorization.statusCode).send({ error: authorization.error });
+  });
+
   app.addHook("onClose", async () => {
     await roomManager.closeAll();
   });
 
   await registerAgentRoutes(app, { roomManager, environmentManager });
   await registerEnvironmentRoutes(app, environmentManager, environmentIdentifier, locationRegistrar);
-  await registerWebsocketRoute(app, roomManager);
+  await registerWebsocketRoute(app, roomManager, auth);
 
   return app;
 }
@@ -80,6 +97,34 @@ const isMain = process.argv[1] ? path.resolve(process.argv[1]) === fileURLToPath
 
 if (isMain) {
   const app = await buildServer();
-  await app.listen({ host, port });
-  console.log(`Rook listening at http://${host}:${port}`);
+  await app.listen({ host: loopbackHost, port });
+
+  let remoteProxy: Awaited<ReturnType<typeof startRemoteProxy>> | null = null;
+  if (remoteBindIp && remoteBindIp !== loopbackHost && remoteBindIp !== "localhost") {
+    remoteProxy = await startRemoteProxy({
+      bindIp: remoteBindIp,
+      port,
+      targetHost: loopbackHost,
+      targetPort: port,
+    });
+  }
+
+  const shutdown = async () => {
+    process.off("SIGINT", shutdown);
+    process.off("SIGTERM", shutdown);
+    try {
+      await remoteProxy?.close();
+    } finally {
+      await app.close();
+      process.exit(0);
+    }
+  };
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+
+  console.log(`Rook listening at http://${loopbackHost}:${port}`);
+  if (remoteProxy) {
+    console.log(`Rook remote proxy listening at http://${remoteBindIp}:${port}`);
+  }
 }

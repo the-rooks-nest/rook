@@ -7,7 +7,8 @@ Scribe menu bar app; the visual design tokens are mirrored in the shared Swift
 layer so the native clients share one look. Functionality
 is the full Rook embeddable
 client, implemented natively against the server's REST + ACP JSON-RPC
-WebSocket protocol.
+WebSocket protocol. For repo-level setup, `.env`, binding, and auth, start with
+[docs/setup.md](../../docs/setup.md).
 
 ## Features
 

@@ -10,6 +10,7 @@ import type {
 } from "../../shared/acp.js";
 import type { SessionRoomManager } from "../realtime/SessionRoomManager.js";
 import { errorMessage } from "../serverHelpers.js";
+import type { ServerAuth } from "../auth.js";
 
 function jsonRpcError(message: string, id: string | number | null = null, code = -32000): JsonRpcFailure {
   return {
@@ -59,8 +60,15 @@ function requestSessionId(message: AcpPromptRequest | AcpSetModeRequest | AcpSet
   return typeof message.params?.sessionId === "string" ? message.params.sessionId : undefined;
 }
 
-export async function registerWebsocketRoute(app: FastifyInstance, roomManager: SessionRoomManager): Promise<void> {
+export async function registerWebsocketRoute(app: FastifyInstance, roomManager: SessionRoomManager, auth: ServerAuth): Promise<void> {
   app.get<{ Querystring: { sessionId?: string } }>("/api/ws", { websocket: true }, (socket, request) => {
+    const authorization = auth.authorizeRequest(request.raw);
+    if (!authorization.ok) {
+      socket.send(JSON.stringify(jsonRpcError(authorization.error)));
+      socket.close();
+      return;
+    }
+
     const sessionId = typeof request.query.sessionId === "string" ? request.query.sessionId.trim() : "";
     if (!sessionId) {
       socket.send(JSON.stringify(jsonRpcError("Missing sessionId")));

@@ -132,6 +132,44 @@ describe("server", () => {
     expect(response.json()).toEqual({ ok: true, service: "rook" });
   });
 
+  it("requires a bearer token when auth is enabled", async () => {
+    const app = await buildServer({ enableClient: false, authToken: "secret-token", trustLoopbackWithoutAuth: false });
+    const unauthorized = await app.inject({ method: "GET", url: "/api/health" });
+    const authorized = await app.inject({
+      method: "GET",
+      url: "/api/health",
+      headers: { authorization: "Bearer secret-token" },
+    });
+    await app.close();
+
+    expect(unauthorized.statusCode).toBe(401);
+    expect(unauthorized.json()).toEqual({ error: "Unauthorized" });
+    expect(authorized.statusCode).toBe(200);
+  });
+
+  it("does not grant loopback auth exemption to proxied requests", async () => {
+    const app = await buildServer({ enableClient: false, authToken: "secret-token" });
+    const proxied = await app.inject({
+      method: "GET",
+      url: "/api/health",
+      headers: { "x-forwarded-for": "100.98.157.21" },
+      remoteAddress: "127.0.0.1",
+    });
+    const proxiedAuthorized = await app.inject({
+      method: "GET",
+      url: "/api/health",
+      headers: {
+        "x-forwarded-for": "100.98.157.21",
+        authorization: "Bearer secret-token",
+      },
+      remoteAddress: "127.0.0.1",
+    });
+    await app.close();
+
+    expect(proxied.statusCode).toBe(401);
+    expect(proxiedAuthorized.statusCode).toBe(200);
+  });
+
   it("starts the selected agent and returns its session", async () => {
     const app = await buildServer({ enableClient: false });
     const response = await app.inject({ method: "POST", url: "/api/agent/start", payload: { agent: "PiAgent" } });

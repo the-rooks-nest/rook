@@ -1,6 +1,6 @@
 # Rook server
 
-Fastify API and runtime orchestration for the Rook native clients and debug tooling. Part of the [Rook](../README.md) monorepo. Product/architecture notes: [PRODUCT/](../PRODUCT/).
+Fastify API and runtime orchestration for the Rook native clients and debug tooling. Part of the [Rook](../README.md) monorepo. Product/architecture notes: [PRODUCT/](../PRODUCT/). Repo-level setup, `.env`, binding, and auth live in [docs/setup.md](../docs/setup.md).
 
 ## Quick start
 
@@ -28,6 +28,10 @@ macOS, the script now starts the server in Terminal.app by default instead of a
 plain detached `nohup` process. This preserves Terminal's protected-folder
 access (notably Downloads/Desktop/Documents), which matters because Pi tool
 subprocesses may otherwise lose TCC-granted file access.
+
+## Network binding and auth
+
+The server now always binds loopback (`127.0.0.1`). For remote phone access, set `ROOK_BIND_IP` to add a second listener on your Mac's VPN/private-network address, and set `ROOK_AUTH_TOKEN`. See [docs/setup.md](../docs/setup.md).
 
 ## Pi agent configuration
 

@@ -9,6 +9,7 @@ struct SettingsScreen: View {
     @ObservedObject var model: RookModel
     @Environment(\.dismiss) private var dismiss
     @State private var serverDraft = ""
+    @State private var authTokenDraft = ""
 
     var body: some View {
         NavigationStack {
@@ -33,7 +34,10 @@ struct SettingsScreen: View {
             }
         }
         .tint(PanelPalette.accent)
-        .onAppear { serverDraft = model.baseURLString }
+        .onAppear {
+            serverDraft = model.baseURLString
+            authTokenDraft = model.authTokenString
+        }
     }
 
     // MARK: - Server
@@ -67,14 +71,33 @@ struct SettingsScreen: View {
                         .strokeBorder(PanelPalette.border)
                 )
 
-            Text("On a device, use your Mac's Tailscale MagicDNS name. The simulator reaches localhost directly.")
+            TextField("Bearer token (optional on localhost)", text: $authTokenDraft)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .textContentType(.password)
+                .foregroundStyle(PanelPalette.textNormal)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(PanelPalette.backgroundPrimary.opacity(0.8))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(PanelPalette.border)
+                )
+
+            Text("On a device, use a hostname or IP address your phone can reach. Add the bearer token if the server is configured to require one for non-local access.")
                 .font(.caption2)
                 .foregroundStyle(PanelPalette.textMuted)
 
             CompactActionButton(title: "Save & reconnect", systemImage: "arrow.clockwise", tint: PanelPalette.accent, prominence: .filled, helpText: "") {
-                model.setBaseURL(serverDraft)
+                model.setServerConnection(baseURL: serverDraft, authToken: authTokenDraft)
             }
-            .disabled(serverDraft.trimmingCharacters(in: .whitespacesAndNewlines) == model.baseURLString)
+            .disabled(
+                serverDraft.trimmingCharacters(in: .whitespacesAndNewlines) == model.baseURLString &&
+                authTokenDraft.trimmingCharacters(in: .whitespacesAndNewlines) == model.authTokenString
+            )
         }
     }
 

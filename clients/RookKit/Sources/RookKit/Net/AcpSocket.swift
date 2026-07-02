@@ -26,15 +26,13 @@ public final class AcpSocket {
 
     public init() {}
 
-    public func connect(sessionId: String, webSocketURL: URL) {
+    public func connect(sessionId: String, request: URLRequest) {
         teardown()
         generation += 1
         let currentGeneration = generation
         self.sessionId = sessionId
 
-        var components = URLComponents(url: webSocketURL, resolvingAgainstBaseURL: false)!
-        components.queryItems = [URLQueryItem(name: "sessionId", value: sessionId)]
-        let task = URLSession.shared.webSocketTask(with: components.url!)
+        let task = URLSession.shared.webSocketTask(with: request)
         self.task = task
         task.resume()
         setConnected(true)

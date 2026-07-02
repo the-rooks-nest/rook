@@ -3,12 +3,20 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+if [[ -f "$REPO_ROOT/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$REPO_ROOT/.env"
+  set +a
+fi
 RUN_ROOT="$REPO_ROOT/.var/run-rook"
 BUILD_ROOT="$RUN_ROOT/build"
 SERVER_LOG="$RUN_ROOT/server.log"
 SERVER_PIDFILE="$RUN_ROOT/server.pid"
 SERVER_PORT="${ROOK_SERVER_PORT:-3000}"
-SERVER_HEALTH_URL="http://127.0.0.1:${SERVER_PORT}/api/health"
+SERVER_BIND_HOST="127.0.0.1"
+SERVER_HEALTH_URL="http://${SERVER_BIND_HOST}:${SERVER_PORT}/api/health"
+SERVER_AUTH_TOKEN="${ROOK_AUTH_TOKEN:-}"
 
 mkdir -p "$RUN_ROOT" "$BUILD_ROOT"
 
@@ -17,8 +25,8 @@ usage() {
 Usage:
   ./scripts/run-rook.sh server
   ./scripts/run-rook.sh mac
-  ./scripts/run-rook.sh sim [--simulator NAME_OR_UDID] [--server-url URL] [--reset-permissions]
-  ./scripts/run-rook.sh phone [--device NAME_OR_UDID] [--team TEAM_ID] [--server-url URL] [--reset-permissions]
+  ./scripts/run-rook.sh sim [--simulator NAME_OR_UDID] [--reset-permissions]
+  ./scripts/run-rook.sh phone [--device NAME_OR_UDID] [--team TEAM_ID] [--reset-permissions]
   ./scripts/run-rook.sh mac sim
   ./scripts/run-rook.sh server mac sim
   ./scripts/run-rook.sh stop
@@ -32,11 +40,10 @@ What it does:
 Notes:
   - you can pass multiple targets; they run in the order given
   - mac uses localhost by default
-  - sim uses http://127.0.0.1:3000 by default
-  - phone requires your Mac's Tailscale MagicDNS name unless --server-url is provided
-  - on macOS, the server launches in Terminal.app so Pi keeps Terminal's
-    Downloads/Desktop/Documents permissions instead of losing them in a
-    detached nohup background process.
+  - sim uses http://127.0.0.1:3000
+  - phone uses ROOK_REMOTE_HOSTNAME, ROOK_BIND_IP, or a non-localhost ROOK_SERVER_HOST
+  - the server always binds localhost; ROOK_BIND_IP adds a second remote listener
+  - the server runs as a detached background process and logs to .var/run-rook/server.log
   - phone builds are intentionally NOT committed with a fixed team id;
     pass --team / ROOK_IOS_DEVELOPMENT_TEAM or let the script auto-detect
     your local Apple Development team from Keychain when possible.
@@ -115,7 +122,6 @@ TARGETS=()
 SIMULATOR_FILTER=""
 DEVICE_FILTER=""
 TEAM_ID="${ROOK_IOS_DEVELOPMENT_TEAM:-}"
-SERVER_URL=""
 RESET_PERMISSIONS=0
 
 while [[ $# -gt 0 ]]; do
@@ -138,10 +144,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --team)
       TEAM_ID="${2:-}"
-      shift 2
-      ;;
-    --server-url)
-      SERVER_URL="${2:-}"
       shift 2
       ;;
     -h|--help)
@@ -195,14 +197,20 @@ PY
 }
 
 health_ok() {
-  curl --silent --show-error --fail "$SERVER_HEALTH_URL" >/dev/null 2>&1
+  local -a curl_args=(--silent --show-error --fail)
+  if [[ -n "$SERVER_AUTH_TOKEN" ]]; then
+    curl_args+=( -H "Authorization: Bearer $SERVER_AUTH_TOKEN" )
+  fi
+  curl "${curl_args[@]}" "$SERVER_HEALTH_URL" >/dev/null 2>&1
 }
 
 listener_is_localhost_only() {
   local out
   out="$(lsof -nP -iTCP:"$SERVER_PORT" -sTCP:LISTEN 2>/dev/null || true)"
   [[ -n "$out" ]] || return 1
-  if grep -Eq 'localhost:|127\.0\.0\.1:' <<<"$out" && ! grep -Eq '\*:|0\.0\.0\.0:|\[::\]:' <<<"$out"; then
+  if grep -Eq '(localhost:|127\.0\.0\.1:)' <<<"$out" \
+    && ! grep -Eq '(\*:|0\.0\.0\.0:|\[::\]:)' <<<"$out" \
+    && ! grep -Eq '(^|[[:space:]])(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.|100\.)' <<<"$out"; then
     return 0
   fi
   return 1
@@ -285,34 +293,6 @@ start_server_in_background() {
   )
 }
 
-start_server_in_terminal() {
-  need_cmd npm
-  need_cmd osascript
-  local command
-  command="$(python3 - <<'PY' "$REPO_ROOT" "$RUN_ROOT" "$SERVER_LOG" "$SERVER_PIDFILE" "$SERVER_PORT"
-import shlex, sys
-repo_root, run_root, server_log, server_pidfile, server_port = sys.argv[1:]
-parts = [
-    f'cd {shlex.quote(repo_root)}',
-    f'mkdir -p {shlex.quote(run_root)}',
-    f': > {shlex.quote(server_log)}',
-    f'export ROOK_SERVER_PORT={shlex.quote(server_port)}',
-    f'echo $$ > {shlex.quote(server_pidfile)}',
-    f'exec > >(tee -a {shlex.quote(server_log)}) 2>&1',
-    'exec npm run dev',
-]
-print('bash -lc ' + shlex.quote('; '.join(parts)))
-PY
-)"
-  log "starting server in Terminal.app (log: $SERVER_LOG)"
-  if ! osascript \
-    -e 'tell application "Terminal" to activate' \
-    -e "tell application \"Terminal\" to do script $(json_escape "$command")" >/dev/null; then
-    warn "failed to launch Terminal.app; falling back to detached background server"
-    start_server_in_background
-  fi
-}
-
 ensure_server_deps() {
   local server_dir="$REPO_ROOT/server"
   if [[ -d "$server_dir/node_modules" ]] && [[ -f "$server_dir/node_modules/tsx/dist/cli.mjs" ]]; then
@@ -325,17 +305,13 @@ ensure_server_deps() {
 
 start_server() {
   if health_ok; then
-    log "server already healthy at http://127.0.0.1:${SERVER_PORT}"
+    log "server already healthy at ${SERVER_HEALTH_URL}"
   else
     if lsof -nP -iTCP:"$SERVER_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
       die "port ${SERVER_PORT} is already in use, but /api/health is not healthy"
     fi
     ensure_server_deps
-    if [[ "$(uname -s)" == "Darwin" ]] && command -v osascript >/dev/null 2>&1; then
-      start_server_in_terminal
-    else
-      start_server_in_background
-    fi
+    start_server_in_background
     if ! wait_for_health 90; then
       tail -n 80 "$SERVER_LOG" >&2 || true
       die "server did not become healthy"
@@ -344,7 +320,7 @@ start_server() {
   fi
 
   if (( HAS_PHONE_TARGET )) && listener_is_localhost_only; then
-    die "server is only listening on localhost; restart it so the phone can reach your Mac over Tailscale"
+    die "server is only listening on localhost; restart it so the phone can reach your Mac over your chosen remote network"
   fi
 }
 
@@ -362,16 +338,20 @@ ensure_xcode_project() {
   )
 }
 
-current_tailscale_dns_name() {
-  if [[ -n "${ROOK_TAILSCALE_DNS_NAME:-}" ]]; then
-    printf '%s\n' "$ROOK_TAILSCALE_DNS_NAME"
+current_remote_target() {
+  if [[ -n "${ROOK_REMOTE_HOSTNAME:-}" ]]; then
+    printf '%s\n' "$ROOK_REMOTE_HOSTNAME"
     return 0
   fi
-  command -v tailscale >/dev/null 2>&1 || return 1
-  tailscale status --json 2>/dev/null | python3 -c '
-import json,sys
-print((json.load(sys.stdin).get("Self", {}) or {}).get("DNSName", ""))
-' 2>/dev/null | sed -e 's/\.$//' -e '/^$/d' || true
+  if [[ -n "${ROOK_BIND_IP:-}" ]]; then
+    printf '%s\n' "$ROOK_BIND_IP"
+    return 0
+  fi
+  if [[ -n "${ROOK_SERVER_HOST:-}" ]] && [[ "$ROOK_SERVER_HOST" != "127.0.0.1" ]] && [[ "$ROOK_SERVER_HOST" != "localhost" ]]; then
+    printf '%s\n' "$ROOK_SERVER_HOST"
+    return 0
+  fi
+  return 1
 }
 
 resolve_simulator() {
@@ -546,7 +526,7 @@ build_sim() {
   local app_path="$derived/Build/Products/Debug-iphonesimulator/Rook.app"
   [[ -d "$app_path" ]] || die "missing built app: $app_path"
 
-  local url="${SERVER_URL:-http://127.0.0.1:${SERVER_PORT}}"
+  local url="http://127.0.0.1:${SERVER_PORT}"
   if (( RESET_PERMISSIONS )); then
     log "resetting simulator privacy permissions for com.rookery.Rook"
     xcrun simctl privacy "$sim_udid" reset all com.rookery.Rook >/dev/null 2>&1 || true
@@ -557,8 +537,14 @@ build_sim() {
   xcrun simctl install "$sim_udid" "$app_path" >/dev/null
   log "launching Rook in simulator with ROOK_SERVER_BASE_URL=$url"
   local launch_output
-  launch_output="$(SIMCTL_CHILD_ROOK_SERVER_BASE_URL="$url" \
-    xcrun simctl launch --terminate-running-process "$sim_udid" com.rookery.Rook)"
+  if [[ -n "$SERVER_AUTH_TOKEN" ]]; then
+    launch_output="$(SIMCTL_CHILD_ROOK_SERVER_BASE_URL="$url" \
+      SIMCTL_CHILD_ROOK_AUTH_TOKEN="$SERVER_AUTH_TOKEN" \
+      xcrun simctl launch --terminate-running-process "$sim_udid" com.rookery.Rook)"
+  else
+    launch_output="$(SIMCTL_CHILD_ROOK_SERVER_BASE_URL="$url" \
+      xcrun simctl launch --terminate-running-process "$sim_udid" com.rookery.Rook)"
+  fi
   log "$launch_output"
 }
 
@@ -582,14 +568,20 @@ build_phone() {
   fi
 
   local url
-  if [[ -n "$SERVER_URL" ]]; then
-    url="$SERVER_URL"
-  else
-    local tailscale_dns
-    tailscale_dns="$(current_tailscale_dns_name)"
-    [[ -n "$tailscale_dns" ]] || die "could not determine your Mac's Tailscale MagicDNS name for the phone; connect Tailscale or pass --server-url explicitly"
-    url="http://${tailscale_dns}:${SERVER_PORT}"
+  local remote_target
+  remote_target="$(current_remote_target)"
+  if [[ -z "$remote_target" ]]; then
+    cat >&2 <<EOF
+[run-rook] error: could not determine a reachable server address for the phone
+[run-rook] set one of:
+[run-rook]   ROOK_REMOTE_HOSTNAME=your-hostname
+[run-rook]   ROOK_BIND_IP=your.remote.ip
+[run-rook] example with Tailscale:
+[run-rook]   ROOK_REMOTE_HOSTNAME=your-mac.tailxxxx.ts.net
+EOF
+    exit 1
   fi
+  url="http://${remote_target}:${SERVER_PORT}"
 
   local app_dir="$REPO_ROOT/clients/iphone"
   local proj="$app_dir/Rook.xcodeproj"
@@ -622,10 +614,16 @@ build_phone() {
   log "installing Rook on $phone_name"
   xcrun devicectl device install app --device "$phone_udid" "$app_path" >/dev/null
   log "launching Rook on $phone_name with ROOK_SERVER_BASE_URL=$url"
+  local launch_env
+  if [[ -n "$SERVER_AUTH_TOKEN" ]]; then
+    launch_env="{\"ROOK_SERVER_BASE_URL\":$(json_escape "$url"),\"ROOK_AUTH_TOKEN\":$(json_escape "$SERVER_AUTH_TOKEN")}"
+  else
+    launch_env="{\"ROOK_SERVER_BASE_URL\":$(json_escape "$url")}"
+  fi
   xcrun devicectl device process launch \
     --device "$phone_udid" \
     --terminate-existing \
-    -e "{\"ROOK_SERVER_BASE_URL\":$(json_escape "$url")}" \
+    -e "$launch_env" \
     com.rookery.Rook >/dev/null
 
   cat <<EOF
@@ -647,7 +645,7 @@ start_server
 for TARGET in "${TARGETS[@]}"; do
   case "$TARGET" in
     server)
-      log "server ready: http://127.0.0.1:${SERVER_PORT}"
+      log "server ready: ${SERVER_HEALTH_URL%/api/health}"
       ;;
     mac)
       build_mac
