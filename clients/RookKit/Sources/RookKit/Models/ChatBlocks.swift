@@ -213,7 +213,7 @@ public enum AcpClientEvent {
     case protocolError(message: String)
     case connectionError(message: String)
     case environmentOffered(EnvironmentOffer)
-    case environmentOfferResolved(environmentId: String)
+    case environmentOfferResolved(environmentId: String, bundleHash: String)
     case environmentEntered(environmentId: String)
     case environmentExited(environmentId: String, error: String?)
 }

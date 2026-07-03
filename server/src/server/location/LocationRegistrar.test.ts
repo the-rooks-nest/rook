@@ -6,7 +6,6 @@ import { isDwellArrival, LocationRegistrar, type LocationEnvironmentSink } from 
 function sink() {
   return {
     registerAvailableEnvironment: vi.fn(async () => {}),
-    unregister: vi.fn(() => true),
     decideEnvironment: vi.fn(),
   } satisfies LocationEnvironmentSink;
 }
@@ -61,32 +60,33 @@ describe("LocationRegistrar", () => {
     const set = [cand("loc:a/1"), cand("loc:b/2")];
     await reg.sync(set);
     s.registerAvailableEnvironment.mockClear();
-    s.unregister.mockClear();
     await reg.sync([cand("loc:a/1"), cand("loc:b/2")]);
     expect(s.registerAvailableEnvironment).not.toHaveBeenCalled();
-    expect(s.unregister).not.toHaveBeenCalled();
   });
 
-  it("replaces the prior set when it changes", async () => {
+  it("registers the next current set when it changes", async () => {
     const s = sink();
     const cs = contextStore();
     const reg = new LocationRegistrar(s, cs, writeStub);
     await reg.sync([cand("loc:a/1"), cand("loc:b/2")]);
     s.registerAvailableEnvironment.mockClear();
     await reg.sync([cand("loc:c/3")]);
-    expect(s.unregister).toHaveBeenCalledWith("loc:a/1");
-    expect(s.unregister).toHaveBeenCalledWith("loc:b/2");
     expect(s.registerAvailableEnvironment).toHaveBeenCalledTimes(1);
+    expect(s.registerAvailableEnvironment).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "loc:c/3" }),
+      expect.anything(),
+      expect.any(String),
+    );
   });
 
-  it("unregisters everything when no candidates remain", async () => {
+  it("does nothing when no candidates remain", async () => {
     const s = sink();
     const cs = contextStore();
     const reg = new LocationRegistrar(s, cs, writeStub);
     await reg.sync([cand("loc:a/1")]);
-    s.unregister.mockClear();
+    s.registerAvailableEnvironment.mockClear();
     await reg.sync([]);
-    expect(s.unregister).toHaveBeenCalledWith("loc:a/1");
+    expect(s.registerAvailableEnvironment).not.toHaveBeenCalled();
   });
 
   it("does not register a drive-by (moving, not dwelled)", async () => {
@@ -97,15 +97,15 @@ describe("LocationRegistrar", () => {
     expect(s.registerAvailableEnvironment).not.toHaveBeenCalled();
   });
 
-  it("registers a real dwell, then drops it when moving away", async () => {
+  it("registers a real dwell, then stops refreshing it when moving away", async () => {
     const s = sink();
     const cs = contextStore();
     const reg = new LocationRegistrar(s, cs, writeStub);
     await reg.sync([cand("loc:a/1")], { isStationary: true });
     expect(s.registerAvailableEnvironment).toHaveBeenCalledTimes(1);
+    s.registerAvailableEnvironment.mockClear();
     await reg.sync([cand("loc:b/2")], { isStationary: false, speedMetersPerSecond: 18 });
-    expect(s.unregister).toHaveBeenCalledWith("loc:a/1");
-    expect(s.registerAvailableEnvironment).toHaveBeenCalledTimes(1);
+    expect(s.registerAvailableEnvironment).not.toHaveBeenCalled();
   });
 });
 

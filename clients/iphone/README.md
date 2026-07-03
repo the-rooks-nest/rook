@@ -21,13 +21,14 @@ binding, and bearer-token auth, start with [docs/setup.md](../../docs/setup.md).
 
 - **Location → skills (the core loop).** Define places (name + GPS center +
   radius). `LocationProvider` monitors each as a `CLCircularRegion`. Entering a
-  region builds `loc:<slug>`, pre-checks the server for matching skills
+  region builds `loc:<slug>`, pre-checks the server for matching bundles
   (`GET /api/environments/preview`), and if any exist registers the environment
   (`POST /api/environments/register`) with `latitude`/`longitude`/`regionId`
-  metadata. The server pushes an offer over the session websocket; you approve
-  with the same 2×2 decisions as every other client; the place's skills load
-  into the agent. Leaving the region marks it unavailable
-  (`POST /api/environments/unregister`).
+  metadata. The server pushes a bundle offer over the session websocket; you
+  review the bundle name plus the names of any skills, MCP servers, and apps it
+  contains, then decide with the same 2×2 choices as every other client.
+  Leaving the region simply stops refreshing it from the phone; the server ages
+  it out on its own.
 - **Full chat parity.** Agent picker, session start/resume, streaming ACP chat
   (text, thinking, tool calls, plans, errors, context usage) — including
   auto-rendering well-formed JSON tool arguments as human-readable YAML and
@@ -107,7 +108,7 @@ Mirrors `RookMacModel.handleForegroundApp`, with place in place of app:
    `loc:<slug>`, pre-check skills via `GET /api/environments/preview`. If
    non-empty, `register`; if empty, skip (no empty offer).
 3. Server pushes `environment_offer_available` → `EnvironmentOfferSheet` → you
-   approve → `POST /api/environments/decision` → skills load into the session.
+   decide on the offered bundle → `POST /api/environments/decision`.
 4. **Region exit**: `markEnvironmentUnavailable`.
 5. **Reconnect / relaunch**: re-announce the current place. **Background**:
    released on `scenePhase == .background`.
@@ -141,7 +142,7 @@ Fast paths from the repo root:
 
 `run-rook.sh sim` starts the server if needed, regenerates the Xcode project from `project.yml`, rebuilds incrementally, installs the fresh app into the selected simulator, and launches it with `ROOK_SERVER_BASE_URL=http://127.0.0.1:3000`.
 
-`run-rook.sh phone` does the same for a paired physical iPhone, using `ROOK_REMOTE_HOSTNAME` or `ROOK_BIND_IP` to determine a server address your phone can reach. The server itself still binds localhost for the Mac app; `ROOK_BIND_IP` adds the second remote listener. It intentionally does **not** hardcode a development team into `project.yml`; pass `--team` / `ROOK_IOS_DEVELOPMENT_TEAM` when needed, or let the script auto-detect your local team for personal use. Keep the phone unlocked when the launcher installs and opens the app; otherwise iOS denies the launch request.
+`run-rook.sh phone` does the same for a paired physical iPhone, using `ROOK_REMOTE_HOSTNAME` or `ROOK_BIND_IP` to determine a server address your phone can reach. The server itself still binds localhost for the Mac app; `ROOK_BIND_IP` adds the second remote listener. It intentionally does **not** hardcode a development team into `project.yml`; pass `--team` / `ROOK_IOS_DEVELOPMENT_TEAM` when needed, or let the script auto-detect your local team for personal use. For physical-device builds it also derives a team-specific bundle identifier (for example `com.rookery.<team>.Rook`) so personal development signing does not collide with the shared `com.rookery.Rook` id. Keep the phone unlocked when the launcher installs and opens the app; otherwise iOS denies the launch request.
 
 Manual steps:
 
@@ -236,7 +237,8 @@ That is the best intermediate test point:
 2. In the simulator: **Features → Location → Custom Location** (or a GPX route),
    set a coordinate **inside** that geofence → the offer sheet appears → approve.
 3. Ask the agent something the office skill covers → it answers using the place
-   skill. Move the simulated location away → `unregister` fires.
+   skill. Move the simulated location away → the phone stops refreshing it and
+   the server ages it out.
 
 Test hooks for scripted verification (set as `SIMCTL_CHILD_*` env vars):
 

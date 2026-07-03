@@ -105,7 +105,16 @@ for d in data.get('result',{}).get('devices',[]):
 PY
 )"
     if [[ -n "$udid" ]]; then
-      xcrun devicectl device process terminate --device "$udid" com.rookery.Rook >/dev/null 2>&1 || true
+      xcrun devicectl device process terminate --device "$udid" "$DEFAULT_IOS_APP_BUNDLE_ID" >/dev/null 2>&1 || true
+      local stop_team stop_bundle_id _stop_widget_id _stop_test_id
+      stop_team="${TEAM_ID:-}"
+      if [[ -z "$stop_team" ]]; then
+        stop_team="$(auto_detect_team 2>/dev/null || true)"
+      fi
+      if [[ -n "$stop_team" ]]; then
+        IFS=$'\t' read -r stop_bundle_id _stop_widget_id _stop_test_id <<<"$(phone_bundle_ids "$stop_team")"
+        xcrun devicectl device process terminate --device "$udid" "$stop_bundle_id" >/dev/null 2>&1 || true
+      fi
     fi
   fi
   rm -f "$tmp"
@@ -123,6 +132,9 @@ SIMULATOR_FILTER=""
 DEVICE_FILTER=""
 TEAM_ID="${ROOK_IOS_DEVELOPMENT_TEAM:-}"
 RESET_PERMISSIONS=0
+DEFAULT_IOS_APP_BUNDLE_ID="com.rookery.Rook"
+DEFAULT_IOS_WIDGET_BUNDLE_ID="${DEFAULT_IOS_APP_BUNDLE_ID}.RookWidgets"
+DEFAULT_IOS_TEST_BUNDLE_ID="com.rookery.RookTests"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -336,6 +348,41 @@ ensure_xcode_project() {
     cd "$app_dir"
     xcodegen generate >/dev/null
   )
+}
+
+patch_iphone_project_bundle_ids() {
+  local project_path="$1"
+  local app_id="$2"
+  local widget_id="$3"
+  local test_id="$4"
+  python3 - <<'PY' "$project_path/project.pbxproj" "$app_id" "$widget_id" "$test_id"
+from pathlib import Path
+import sys
+pbxproj = Path(sys.argv[1])
+app_id, widget_id, test_id = sys.argv[2:5]
+text = pbxproj.read_text()
+text = text.replace("PRODUCT_BUNDLE_IDENTIFIER = com.rookery.Rook.RookWidgets;", f"PRODUCT_BUNDLE_IDENTIFIER = {widget_id};")
+text = text.replace("PRODUCT_BUNDLE_IDENTIFIER = com.rookery.RookTests;", f"PRODUCT_BUNDLE_IDENTIFIER = {test_id};")
+text = text.replace("PRODUCT_BUNDLE_IDENTIFIER = com.rookery.Rook;", f"PRODUCT_BUNDLE_IDENTIFIER = {app_id};")
+pbxproj.write_text(text)
+PY
+}
+
+sanitize_bundle_segment() {
+  local raw="$1"
+  raw="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//; s/-+/-/g')"
+  [[ -n "$raw" ]] || raw="dev"
+  printf '%s' "$raw"
+}
+
+phone_bundle_ids() {
+  local team="$1"
+  local team_segment
+  team_segment="$(sanitize_bundle_segment "$team")"
+  local app_id="com.rookery.${team_segment}.Rook"
+  local widget_id="${app_id}.RookWidgets"
+  local test_id="com.rookery.${team_segment}.RookTests"
+  printf '%s\t%s\t%s\n' "$app_id" "$widget_id" "$test_id"
 }
 
 current_remote_target() {
@@ -591,7 +638,11 @@ EOF
   local app_dir="$REPO_ROOT/clients/iphone"
   local proj="$app_dir/Rook.xcodeproj"
   local derived="$BUILD_ROOT/Rook-phone"
+  local phone_app_bundle_id phone_widget_bundle_id phone_test_bundle_id
+  IFS=$'\t' read -r phone_app_bundle_id phone_widget_bundle_id phone_test_bundle_id <<<"$(phone_bundle_ids "$TEAM_ID")"
+  log "using phone bundle ids: $phone_app_bundle_id (+ widget/test variants)"
   ensure_xcode_project "$app_dir" "$proj"
+  patch_iphone_project_bundle_ids "$proj" "$phone_app_bundle_id" "$phone_widget_bundle_id" "$phone_test_bundle_id"
   log "building Rook for $phone_name"
   local build_log="$RUN_ROOT/rook-phone-build.log"
   if ! xcodebuild \
@@ -614,7 +665,7 @@ EOF
 
   if (( RESET_PERMISSIONS )); then
     log "uninstalling Rook on $phone_name to reset its privacy permissions"
-    xcrun devicectl device uninstall app --device "$phone_udid" com.rookery.Rook >/dev/null 2>&1 || true
+    xcrun devicectl device uninstall app --device "$phone_udid" "$phone_app_bundle_id" >/dev/null 2>&1 || true
   fi
   log "installing Rook on $phone_name"
   xcrun devicectl device install app --device "$phone_udid" "$app_path" >/dev/null
@@ -630,8 +681,12 @@ EOF
     --device "$phone_udid" \
     --terminate-existing \
     -e "$launch_env" \
-    com.rookery.Rook >"$launch_log" 2>&1; then
-    if grep -qiE 'Locked|could not be unlocked|RequestDenied' "$launch_log"; then
+    "$phone_app_bundle_id" >"$launch_log" 2>&1; then
+    if grep -qiE 'explicitly trusted by the user|invalid code signature|inadequate entitlements' "$launch_log"; then
+      cat "$launch_log" >&2 || true
+      die "iPhone launch failed because the developer app certificate is not yet trusted on $phone_name; trust it in Settings -> General -> VPN & Device Management, then run ./scripts/run-rook.sh phone again"
+    fi
+    if grep -qiE 'Locked|could not be unlocked' "$launch_log"; then
       cat "$launch_log" >&2 || true
       die "iPhone launch failed because $phone_name is locked; unlock the phone and run ./scripts/run-rook.sh phone again"
     fi

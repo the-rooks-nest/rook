@@ -3,23 +3,34 @@ import type { EnvironmentDecisionStore } from "./EnvironmentDecisionStore.js";
 import type { EnvironmentPreview } from "../../shared/environment.js";
 import type { EnvironmentRepositoryService } from "./EnvironmentRepositoryService.js";
 import type {
+  EnvironmentBundleOffer,
   EnvironmentDecision,
   EnvironmentEventListener,
   EnvironmentOfferInfo,
   EnvironmentRecord,
   EffectiveDecision,
   EphemeralDecision,
+  EnvironmentResolution,
 } from "./types.js";
+
+interface RememberedBundleEntry {
+  bundleId: string;
+  bundleHash: string;
+  bundlePath?: string;
+  skills: string[];
+  mcpServers: string[];
+  apps: string[];
+}
 
 interface RememberedEnvironmentEntry {
   record: EnvironmentRecord;
   info: EnvironmentOfferInfo;
   registeredAt?: string;
-  unregisteredAt?: string;
   lastTouchedAt: string;
   activeUntil?: string;
   status: "active" | "recent";
   contextText?: string;
+  bundles: RememberedBundleEntry[];
   bundleIds: string[];
   bundleCollectionPaths: string[];
 }
@@ -30,10 +41,10 @@ export interface DiagnosticEnvironmentEntry {
   record: EnvironmentRecord;
   info: EnvironmentOfferInfo;
   registeredAt?: string;
-  unregisteredAt?: string;
   lastTouchedAt: string;
   activeUntil?: string;
   contextText?: string;
+  bundles: Array<RememberedBundleEntry & { effectiveDecision: EffectiveDecision }>;
   bundleIds: string[];
   bundleCollectionPaths: string[];
   effectiveDecision: EffectiveDecision;
@@ -51,11 +62,13 @@ export interface EnvironmentManagerOptions {
  *
  * Current behavior:
  * - keep environments in memory as either active or recent
- * - active = touched by register within the active window and not explicitly unregistered
- * - unregister immediately moves an environment from active -> recent
+ * - on registration, resolve any valid bundles and remember their exact-content hashes
+ * - active = touched by register within the active window
+ * - when the active window expires, the environment moves to recent
  * - recent entries are retained for a second, longer TTL before being forgotten
- * - log register / unregister / expiry activity
- * - do not load skills, talk to rooms, or consult the repository during registration
+ * - log register / expiry activity
+ * - push bundle offer / resolution events into subscribed rooms
+ * - do not yet load bundle capabilities into runtimes during registration
  */
 export class EnvironmentManager {
   private readonly remembered = new Map<string, RememberedEnvironmentEntry>();
@@ -87,9 +100,17 @@ export class EnvironmentManager {
     const now = this.now();
     const nowIso = new Date(now).toISOString();
     const existing = this.remembered.get(env.id);
-    const registeredAt = nowIso;
+    const registeredAt = existing?.status === "active" ? (existing.registeredAt ?? nowIso) : nowIso;
     const activeUntil = new Date(now + this.activeEnvironmentWindowMs).toISOString();
-    const bundles = await this.repositoryService.getValidBundles(env.id);
+    const resolvedBundles = await this.repositoryService.getResolvedBundles(env.id);
+    const bundles = resolvedBundles.map(({ bundle, bundleHash }) => ({
+      bundleId: bundle.bundleId,
+      bundleHash,
+      bundlePath: bundle.bundlePath,
+      skills: bundle.skills.map((artifact) => artifact.id).sort((a, b) => a.localeCompare(b)),
+      mcpServers: bundle.mcpServers.map((artifact) => artifact.id).sort((a, b) => a.localeCompare(b)),
+      apps: bundle.apps.map((artifact) => artifact.id).sort((a, b) => a.localeCompare(b)),
+    }));
     const bundleIds = bundles.map((bundle) => bundle.bundleId);
     const bundleCollectionPaths = [...new Set(
       bundles
@@ -110,6 +131,7 @@ export class EnvironmentManager {
       lastTouchedAt: nowIso,
       activeUntil,
       status: "active",
+      bundles,
       bundleIds,
       bundleCollectionPaths,
       ...(contextText ? { contextText } : {}),
@@ -127,44 +149,52 @@ export class EnvironmentManager {
       },
       "environment registered",
     );
-  }
 
-  unregister(environmentId: string): boolean {
-    this.pruneMemory();
-    const existing = this.remembered.get(environmentId);
-    if (!existing) return false;
-
-    const nowIso = new Date(this.now()).toISOString();
-    this.remembered.set(environmentId, {
-      ...existing,
-      lastTouchedAt: nowIso,
-      unregisteredAt: nowIso,
-      activeUntil: undefined,
-      status: "recent",
-    });
-    this.ephemeral.delete(environmentId);
-    for (const sessionId of this.listeners.keys()) {
-      this.entered.get(sessionId)?.delete(environmentId);
+    const previousBundles = existing?.status === "active" ? existing.bundles : [];
+    const previousBundleHashes = new Set(previousBundles.map((bundle) => bundle.bundleHash));
+    const currentBundleHashes = new Set(bundles.map((bundle) => bundle.bundleHash));
+    for (const previousBundle of previousBundles) {
+      if (currentBundleHashes.has(previousBundle.bundleHash)) continue;
+      this.ephemeral.delete(previousBundle.bundleHash);
+      this.broadcastBundleResolution(env.id, previousBundle.bundleId, previousBundle.bundleHash, "unavailable");
     }
-    this.logger.info(
-      {
-        environmentId,
-        registeredAt: existing.registeredAt,
-        unregisteredAt: nowIso,
-      },
-      "environment unregistered",
-    );
-    return true;
+    for (const bundle of bundles) {
+      if (previousBundleHashes.has(bundle.bundleHash)) continue;
+      if (this.effectiveDecision(bundle.bundleHash) !== "undecided") continue;
+      this.broadcastBundleOffer({
+        environmentId: env.id,
+        bundleId: bundle.bundleId,
+        bundleHash: bundle.bundleHash,
+        sourceName: info.sourceName,
+        canonicalSourceUrl: info.canonicalSourceUrl,
+        skills: bundle.skills,
+        mcpServers: bundle.mcpServers,
+        apps: bundle.apps,
+      });
+    }
   }
 
-  decideEnvironment(environmentId: string, decision: EnvironmentDecision): void {
+  decideEnvironment(environmentId: string, decision: EnvironmentDecision, bundleHash?: string): void {
     this.pruneMemory();
+    const decisionKey = bundleHash ?? environmentId;
     if (decision === "approve" || decision === "reject") {
-      this.decisions.setDecision(environmentId, decision);
-      this.ephemeral.delete(environmentId);
-      return;
+      this.decisions.setDecision(decisionKey, decision);
+      this.ephemeral.delete(decisionKey);
+    } else {
+      this.ephemeral.set(decisionKey, decision);
     }
-    this.ephemeral.set(environmentId, decision);
+
+    if (bundleHash) {
+      const bundle = this.remembered.get(environmentId)?.bundles.find((candidate) => candidate.bundleHash == bundleHash);
+      if (bundle) {
+        this.broadcastBundleResolution(
+          environmentId,
+          bundle.bundleId,
+          bundle.bundleHash,
+          decision === "accept" || decision === "approve" ? "approved" : "dismissed",
+        );
+      }
+    }
   }
 
   effectiveDecision(environmentId: string): EffectiveDecision {
@@ -178,6 +208,22 @@ export class EnvironmentManager {
     this.pruneMemory();
     this.listeners.set(sessionId, listener);
     if (!this.entered.has(sessionId)) this.entered.set(sessionId, new Set());
+    for (const entry of this.remembered.values()) {
+      if (entry.status !== "active") continue;
+      for (const bundle of entry.bundles) {
+        if (this.effectiveDecision(bundle.bundleHash) !== "undecided") continue;
+        listener.onEnvironmentOffered({
+          environmentId: entry.record.id,
+          bundleId: bundle.bundleId,
+          bundleHash: bundle.bundleHash,
+          sourceName: entry.info.sourceName,
+          canonicalSourceUrl: entry.info.canonicalSourceUrl,
+          skills: bundle.skills,
+          mcpServers: bundle.mcpServers,
+          apps: bundle.apps,
+        });
+      }
+    }
   }
 
   unsubscribe(sessionId: string): void {
@@ -207,10 +253,13 @@ export class EnvironmentManager {
         record: entry.record,
         info: entry.info,
         registeredAt: entry.registeredAt,
-        unregisteredAt: entry.unregisteredAt,
         lastTouchedAt: entry.lastTouchedAt,
         activeUntil: entry.activeUntil,
         contextText: entry.contextText,
+        bundles: entry.bundles.map((bundle) => ({
+          ...bundle,
+          effectiveDecision: this.effectiveDecision(bundle.bundleHash),
+        })),
         bundleIds: entry.bundleIds,
         bundleCollectionPaths: entry.bundleCollectionPaths,
         effectiveDecision: this.effectiveDecision(environmentId),
@@ -219,6 +268,18 @@ export class EnvironmentManager {
         if (a.status !== b.status) return a.status === "active" ? -1 : 1;
         return a.environmentId.localeCompare(b.environmentId);
       });
+  }
+
+  private broadcastBundleOffer(offer: EnvironmentBundleOffer): void {
+    for (const listener of this.listeners.values()) {
+      listener.onEnvironmentOffered(offer);
+    }
+  }
+
+  private broadcastBundleResolution(environmentId: string, bundleId: string, bundleHash: string, resolution: EnvironmentResolution): void {
+    for (const listener of this.listeners.values()) {
+      listener.onEnvironmentResolved(environmentId, bundleId, bundleHash, resolution);
+    }
   }
 
   close(): void {
@@ -237,6 +298,10 @@ export class EnvironmentManager {
             activeUntil: undefined,
           });
           this.ephemeral.delete(environmentId);
+          for (const bundle of entry.bundles) {
+            this.ephemeral.delete(bundle.bundleHash);
+            this.broadcastBundleResolution(environmentId, bundle.bundleId, bundle.bundleHash, "unavailable");
+          }
           this.logger.info(
             {
               environmentId,
@@ -254,6 +319,9 @@ export class EnvironmentManager {
         if (lastTouchedAt + this.recentEnvironmentRetentionMs > now) continue;
         this.remembered.delete(environmentId);
         this.ephemeral.delete(environmentId);
+        for (const bundle of entry.bundles) {
+          this.ephemeral.delete(bundle.bundleHash);
+        }
         this.logger.info(
           {
             environmentId,

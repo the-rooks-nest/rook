@@ -129,14 +129,6 @@ final class RookMacModel: ObservableObject {
     private var reconnectTask: Task<Void, Never>?
     private var queuedMessageCounter = 0
 
-    private struct RegisteredEnvironmentState {
-        var sourceName: String
-        var metadata: [String: JSONValue]
-        var lastEncounteredAt: Date
-        var lastRegisteredAt: Date
-        var expiresAt: Date
-    }
-
     private struct WebEnvironmentCandidate {
         let id: String
         let sourceName: String
@@ -149,22 +141,24 @@ final class RookMacModel: ObservableObject {
         let metadata: [String: JSONValue]
     }
 
-    private var registeredEnvironmentStates: [String: RegisteredEnvironmentState] = [:]
-    private let environmentEncounterTtl: TimeInterval
-    private let environmentReregisterInterval: TimeInterval
+    private var environmentCache: EnvironmentRegistrationCache
+    private let environmentTtl: TimeInterval
+    private let environmentReportInterval: TimeInterval
     private let environmentSnapshotInterval: TimeInterval
-    private let environmentImmediateDedupWindow: TimeInterval
 
     init(
-        environmentEncounterTtl: TimeInterval = 5 * 60,
-        environmentReregisterInterval: TimeInterval = 5 * 60,
-        environmentSnapshotInterval: TimeInterval = 15,
-        environmentImmediateDedupWindow: TimeInterval = 2
+        environmentTtl: TimeInterval = 4 * 60 + 45,
+        environmentReportInterval: TimeInterval = 5 * 60,
+        environmentSnapshotInterval: TimeInterval = 15
     ) {
-        self.environmentEncounterTtl = environmentEncounterTtl
-        self.environmentReregisterInterval = environmentReregisterInterval
+        self.environmentTtl = environmentTtl
+        self.environmentReportInterval = environmentReportInterval
         self.environmentSnapshotInterval = environmentSnapshotInterval
-        self.environmentImmediateDedupWindow = environmentImmediateDedupWindow
+        self.environmentCache = EnvironmentRegistrationCache(
+            ttl: environmentTtl,
+            reportInterval: environmentReportInterval,
+            depth: Self.environmentDepth
+        )
         let envBaseURL = ProcessInfo.processInfo.environment["ROOK_SERVER_BASE_URL"]?.trimmingCharacters(in: .whitespacesAndNewlines)
         let storedBaseURL = UserDefaults.standard.string(forKey: "RookServerBaseURL")?.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedBaseURL = (envBaseURL?.isEmpty == false ? envBaseURL : storedBaseURL) ?? "http://127.0.0.1:3000"
@@ -205,12 +199,12 @@ final class RookMacModel: ObservableObject {
         }
         environmentExpiryTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.maintainEncounteredEnvironments(reason: "timer", allowReregister: true)
+                self?.maintainEncounteredEnvironments(reason: "timer", includeReregistration: true)
             }
         }
         environmentSnapshotTimer = Timer.scheduledTimer(withTimeInterval: environmentSnapshotInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.maintainEncounteredEnvironments(reason: "poll", allowReregister: false)
+                self?.maintainEncounteredEnvironments(reason: "poll", includeReregistration: false)
             }
         }
         foregroundMonitor.onForegroundChange = { [weak self] app in
@@ -834,11 +828,11 @@ final class RookMacModel: ObservableObject {
             appendErrorBlock(source: "connection", message: message)
         case .environmentOffered(let offer):
             handleEnvironmentOffered(offer)
-        case .environmentOfferResolved(let environmentId):
-            handleEnvironmentOfferResolved(environmentId)
+        case .environmentOfferResolved(let environmentId, let bundleHash):
+            handleEnvironmentOfferResolved(environmentId, bundleHash: bundleHash)
         case .environmentEntered(let environmentId):
             if enteredEnvironments.insert(environmentId).inserted {
-                appendBlock(.system(text: "Entered environment \(environmentId) — skills loaded."))
+                appendBlock(.system(text: "Entered environment \(environmentId)."))
             }
         case .environmentExited(let environmentId, let error):
             if enteredEnvironments.remove(environmentId) != nil {
@@ -1109,22 +1103,13 @@ final class RookMacModel: ObservableObject {
     private func installWorkspaceObservers() {
         let center = NSWorkspace.shared.notificationCenter
         workspaceObservers.append(center.addObserver(
-            forName: NSWorkspace.didTerminateApplicationNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.maintainEncounteredEnvironments(reason: "app-terminated", allowReregister: false)
-            }
-        })
-        workspaceObservers.append(center.addObserver(
             forName: NSWorkspace.didWakeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
                 self?.reconcileVisibleEnvironmentSnapshot(reason: "wake")
-                self?.maintainEncounteredEnvironments(reason: "wake", allowReregister: false)
+                self?.maintainEncounteredEnvironments(reason: "wake", includeReregistration: false)
             }
         })
     }
@@ -1172,110 +1157,71 @@ final class RookMacModel: ObservableObject {
     }
 
     private func encounterEnvironmentCandidates(_ candidates: [EnvironmentCandidate], reason: String) {
-        let now = Date()
-        for candidate in candidates {
-            let existing = registeredEnvironmentStates[candidate.id]
-            if let existing,
-               existing.sourceName == candidate.sourceName,
-               now.timeIntervalSince(existing.lastRegisteredAt) < environmentImmediateDedupWindow {
-                var touched = existing
-                touched.lastEncounteredAt = now
-                touched.expiresAt = now.addingTimeInterval(environmentEncounterTtl)
-                registeredEnvironmentStates[candidate.id] = touched
-                providerLog("register skip [\(reason)]: \(candidate.id)")
+        let actions = environmentCache.encounter(
+            candidates.map { EnvironmentRegistrationCache.Candidate(id: $0.id, sourceName: $0.sourceName, metadata: $0.metadata) },
+            now: Date()
+        )
+
+        for action in actions {
+            guard action.kind == .register,
+                  let sourceName = action.sourceName,
+                  let metadata = action.metadata else {
                 continue
             }
-
-            let registeredAt = now
-            var metadata = candidate.metadata
-            metadata["registeredAt"] = .string(Self.iso8601String(from: registeredAt))
-            let metadataForRegister = metadata
-            registeredEnvironmentStates[candidate.id] = RegisteredEnvironmentState(
-                sourceName: candidate.sourceName,
-                metadata: metadataForRegister,
-                lastEncounteredAt: now,
-                lastRegisteredAt: now,
-                expiresAt: now.addingTimeInterval(environmentEncounterTtl)
+            registerEncounteredEnvironment(
+                id: action.id,
+                sourceName: sourceName,
+                metadata: metadata,
+                reason: reason,
+                logPrefix: "register"
             )
-            Task {
-                do {
-                    try await api.registerEnvironment(
-                        id: candidate.id,
-                        sourceName: candidate.sourceName,
-                        metadata: metadataForRegister
-                    )
-                    providerLog("register ok [\(reason)]: \(candidate.id)")
-                } catch {
-                    providerLog("register error [\(reason)]: \(error.localizedDescription)")
+        }
+    }
+
+    private func maintainEncounteredEnvironments(reason: String, includeReregistration: Bool) {
+        let actions = environmentCache.maintain(now: Date(), includeReregistration: includeReregistration)
+
+        for action in actions {
+            switch action.kind {
+            case .forget:
+                providerLog("cache forget [\(reason)]: \(action.id)")
+            case .reregister:
+                guard let sourceName = action.sourceName,
+                      let metadata = action.metadata else {
+                    continue
                 }
+                registerEncounteredEnvironment(
+                    id: action.id,
+                    sourceName: sourceName,
+                    metadata: metadata,
+                    reason: reason,
+                    logPrefix: "reregister"
+                )
+            case .register:
+                continue
             }
         }
     }
 
-    private func maintainEncounteredEnvironments(reason: String, allowReregister: Bool) {
-        let now = Date()
-        let openAppBundleIds = currentOpenApplicationBundleIds()
-        let openWebEnvironmentIds = currentOpenWebEnvironmentIds()
-
-        for id in registeredEnvironmentStates.keys.sorted(by: { Self.environmentDepth($0) > Self.environmentDepth($1) }) {
-            guard let state = registeredEnvironmentStates[id] else {
-                continue
-            }
-
-            if !isEnvironmentStillOpen(id: id, state: state, openAppBundleIds: openAppBundleIds, openWebEnvironmentIds: openWebEnvironmentIds) {
-                registeredEnvironmentStates.removeValue(forKey: id)
-                Task {
-                    do {
-                        try await api.unregisterEnvironment(id: id)
-                        providerLog("unregister ok [\(reason)]: \(id)")
-                    } catch {
-                        providerLog("unregister error [\(reason)]: \(error.localizedDescription)")
-                    }
-                }
-                continue
-            }
-
-            if state.expiresAt <= now {
-                registeredEnvironmentStates.removeValue(forKey: id)
-                providerLog("cache forget [\(reason)]: \(id)")
-                continue
-            }
-
-            guard allowReregister else {
-                continue
-            }
-            if now.timeIntervalSince(state.lastRegisteredAt) < environmentReregisterInterval {
-                continue
-            }
-
-            var refreshedState = state
-            refreshedState.lastRegisteredAt = now
-            refreshedState.metadata["registeredAt"] = .string(Self.iso8601String(from: now))
-            registeredEnvironmentStates[id] = refreshedState
-            Task {
-                do {
-                    try await api.registerEnvironment(
-                        id: id,
-                        sourceName: refreshedState.sourceName,
-                        metadata: refreshedState.metadata
-                    )
-                    providerLog("reregister ok [\(reason)]: \(id)")
-                } catch {
-                    providerLog("reregister error [\(reason)]: \(error.localizedDescription)")
-                }
+    private func registerEncounteredEnvironment(
+        id: String,
+        sourceName: String,
+        metadata: [String: JSONValue],
+        reason: String,
+        logPrefix: String
+    ) {
+        Task {
+            do {
+                try await api.registerEnvironment(
+                    id: id,
+                    sourceName: sourceName,
+                    metadata: metadata
+                )
+                providerLog("\(logPrefix) ok [\(reason)]: \(id)")
+            } catch {
+                providerLog("\(logPrefix) error [\(reason)]: \(error.localizedDescription)")
             }
         }
-    }
-
-    private func currentOpenApplicationBundleIds() -> Set<String> {
-        Set(NSWorkspace.shared.runningApplications.compactMap { app in
-            guard let bundleId = app.bundleIdentifier,
-                  app.activationPolicy == .regular,
-                  bundleId != Bundle.main.bundleIdentifier else {
-                return nil
-            }
-            return bundleId
-        })
     }
 
     private func currentVisibleApplications() -> [NSRunningApplication] {
@@ -1348,71 +1294,6 @@ final class RookMacModel: ObservableObject {
             }
         }
         return byId.values.sorted { Self.environmentDepth($0.id) < Self.environmentDepth($1.id) }
-    }
-
-    private func currentOpenWebEnvironmentIds() -> Set<String> {
-        let openAppBundleIds = currentOpenApplicationBundleIds()
-        var ids: Set<String> = []
-        for bundleId in Self.browserBundleIds where openAppBundleIds.contains(bundleId) {
-            for rawURL in browserTabURLs(bundleId: bundleId) {
-                if let webCandidate = Self.webEnvironmentCandidate(rawURL: rawURL, bundleId: bundleId, appName: "") {
-                    ids.insert(webCandidate.id)
-                }
-            }
-        }
-        return ids
-    }
-
-    private func isEnvironmentStillOpen(
-        id: String,
-        state: RegisteredEnvironmentState,
-        openAppBundleIds: Set<String>,
-        openWebEnvironmentIds: Set<String>
-    ) -> Bool {
-        if id.hasPrefix("web:") {
-            return openWebEnvironmentIds.contains(id)
-        }
-        if let bundleId = state.metadata["bundleId"]?.stringValue {
-            return openAppBundleIds.contains(bundleId)
-        }
-        return true
-    }
-
-    private func browserTabURLs(bundleId: String) -> [String] {
-        let script = appleScriptForTabURLs(bundleId: bundleId)
-        guard !script.isEmpty else {
-            return []
-        }
-        var error: NSDictionary?
-        let result = NSAppleScript(source: script)?.executeAndReturnError(&error)
-        if let error {
-            providerLog("tab-scan failed [\(bundleId)]: \(error[NSAppleScript.errorMessage] ?? error)")
-            return []
-        }
-        let output = result?.stringValue ?? ""
-        return output
-            .split(separator: "\n")
-            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-    }
-
-    private func appleScriptForTabURLs(bundleId: String) -> String {
-        return """
-        set _urls to {}
-        tell application id "\(bundleId)"
-            repeat with w in windows
-                repeat with t in tabs of w
-                    try
-                        set end of _urls to (URL of t as text)
-                    end try
-                end repeat
-            end repeat
-        end tell
-        set AppleScript's text item delimiters to linefeed
-        set _joined to _urls as text
-        set AppleScript's text item delimiters to ""
-        return _joined
-        """
     }
 
     private static func iso8601String(from date: Date) -> String {
@@ -1707,24 +1588,28 @@ final class RookMacModel: ObservableObject {
     /// comes (back) up — registrations are in-memory server state and die with it.
     private func reannounceRegisteredEnvironments() {
         reconcileVisibleEnvironmentSnapshot(reason: "server-online")
-        maintainEncounteredEnvironments(reason: "server-online", allowReregister: false)
-        let candidates = registeredEnvironmentStates
-            .sorted { Self.environmentDepth($0.key) < Self.environmentDepth($1.key) }
-        Task {
-            for (id, state) in candidates {
-                try? await api.registerEnvironment(
-                    id: id,
-                    sourceName: state.sourceName,
-                    metadata: state.metadata
-                )
+        maintainEncounteredEnvironments(reason: "server-online", includeReregistration: false)
+        let actions = environmentCache.reannounceAll(now: Date())
+        for action in actions {
+            guard action.kind == .register,
+                  let sourceName = action.sourceName,
+                  let metadata = action.metadata else {
+                continue
             }
+            registerEncounteredEnvironment(
+                id: action.id,
+                sourceName: sourceName,
+                metadata: metadata,
+                reason: "server-online",
+                logPrefix: "register"
+            )
         }
     }
 
     // MARK: - Environment offers
 
     private func handleEnvironmentOffered(_ offer: EnvironmentOffer) {
-        guard !pendingOffers.contains(where: { $0.environmentId == offer.environmentId }) else {
+        guard !pendingOffers.contains(where: { $0.bundleHash == offer.bundleHash }) else {
             return
         }
         let wasEmpty = pendingOffers.isEmpty
@@ -1735,9 +1620,9 @@ final class RookMacModel: ObservableObject {
         }
     }
 
-    private func handleEnvironmentOfferResolved(_ environmentId: String) {
-        let removedHead = pendingOffer?.environmentId == environmentId
-        pendingOffers.removeAll { $0.environmentId == environmentId }
+    private func handleEnvironmentOfferResolved(_ environmentId: String, bundleHash: String) {
+        let removedHead = pendingOffer?.bundleHash == bundleHash
+        pendingOffers.removeAll { $0.bundleHash == bundleHash }
         guard removedHead else {
             return
         }
@@ -1757,18 +1642,18 @@ final class RookMacModel: ObservableObject {
         }
         Task {
             do {
-                try await api.decideEnvironment(environmentId: offer.environmentId, decision: decision)
+                try await api.decideEnvironment(environmentId: offer.environmentId, bundleHash: offer.bundleHash, decision: decision)
                 if decision == "accept" || decision == "approve" {
-                    appendBlock(.system(text: "Environment \(offer.environmentId) allowed — agent reloads its skills."))
+                    appendBlock(.system(text: "Bundle \(offer.bundleId) allowed for \(offer.environmentId)."))
                 }
             } catch {
                 offerError = error.localizedDescription
                 return
             }
-            if pendingOffer?.environmentId == offer.environmentId {
+            if pendingOffer?.bundleHash == offer.bundleHash {
                 pendingOffers.removeFirst()
             } else {
-                pendingOffers.removeAll { $0.environmentId == offer.environmentId }
+                pendingOffers.removeAll { $0.bundleHash == offer.bundleHash }
             }
             advanceOfferQueueOrDismissIfNeeded()
         }
@@ -1785,27 +1670,9 @@ final class RookMacModel: ObservableObject {
             offerLoading = false
             return
         }
-        let environmentId = offer.environmentId
         offerBundles = []
         offerError = ""
-        offerLoading = true
-        Task {
-            do {
-                let bundles = try await api.environmentPreview(environmentId: environmentId).bundles
-                guard pendingOffer?.environmentId == environmentId else {
-                    return
-                }
-                offerBundles = bundles
-            } catch {
-                guard pendingOffer?.environmentId == environmentId else {
-                    return
-                }
-                offerError = error.localizedDescription
-            }
-            if pendingOffer?.environmentId == environmentId {
-                offerLoading = false
-            }
-        }
+        offerLoading = false
     }
 
     private func advanceOfferQueueOrDismissIfNeeded() {

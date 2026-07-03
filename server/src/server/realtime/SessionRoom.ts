@@ -4,7 +4,7 @@ import {
   ENVIRONMENT_EXITED_KIND,
 } from "../../shared/environment.js";
 import type { JsonRpcFailure, JsonRpcSuccess } from "../../shared/acp.js";
-import type { EnvironmentEventListener, EnvironmentOfferInfo, EnvironmentResolution } from "../environment/types.js";
+import type { EnvironmentBundleOffer, EnvironmentEventListener, EnvironmentResolution } from "../environment/types.js";
 import type { BaseAgent } from "../agents/BaseAgent.js";
 import type { AgentSessionRecord } from "../agents/sessionLog.js";
 import { EnvironmentSessionState } from "./EnvironmentSessionState.js";
@@ -90,17 +90,19 @@ export class SessionRoom implements EnvironmentEventListener {
     this.environmentState.configureRuntime(baseSkillPaths, rebuild);
   }
 
-  onEnvironmentOffered(environmentId: string, info: EnvironmentOfferInfo): void {
-    logEnvironmentEvent(this.sessionId, "offered", environmentId, {
-      sourceName: info.sourceName,
-      canonicalSourceUrl: info.canonicalSourceUrl,
+  onEnvironmentOffered(offer: EnvironmentBundleOffer): void {
+    logEnvironmentEvent(this.sessionId, "offered", offer.environmentId, {
+      bundleId: offer.bundleId,
+      bundleHash: offer.bundleHash,
+      sourceName: offer.sourceName,
+      canonicalSourceUrl: offer.canonicalSourceUrl,
     });
-    void this.broadcastEnvironmentEvent(this.environmentState.offer(environmentId, info));
+    void this.broadcastEnvironmentEvent(this.environmentState.offer(offer));
   }
 
-  onEnvironmentResolved(environmentId: string, resolution: EnvironmentResolution): void {
-    logEnvironmentEvent(this.sessionId, "resolved", environmentId, { resolution });
-    void this.broadcastEnvironmentEvent(this.environmentState.resolve(environmentId, resolution));
+  onEnvironmentResolved(environmentId: string, bundleId: string, bundleHash: string, resolution: EnvironmentResolution): void {
+    logEnvironmentEvent(this.sessionId, "resolved", environmentId, { bundleId, bundleHash, resolution });
+    void this.broadcastEnvironmentEvent(this.environmentState.resolve(environmentId, bundleId, bundleHash, resolution));
   }
 
   onEnvironmentEntered(environmentId: string, skillPaths: string[], contextText?: string): void {

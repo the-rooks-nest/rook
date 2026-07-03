@@ -5,11 +5,14 @@ import type { PersistentDecision } from "./types.js";
 import { REPO_ROOT } from "../paths.js";
 
 /**
- * Repository layer for persistent environment decisions (Approve / Reject).
+ * Repository layer for persistent bundle decisions (Approve / Reject).
  *
  * Backed by Node's built-in `node:sqlite`. The service layer never sees SQL — if we
  * later swap in another backend, only this file changes. Ephemeral decisions
  * (Accept / Ignore) are NOT stored here; they live in memory on the EnvironmentManager.
+ *
+ * The stored key is an opaque decision key. Today that is typically a bundle-content
+ * hash, but older callers may still pass environment ids.
  */
 export class EnvironmentDecisionStore {
   private readonly db: DatabaseSync;

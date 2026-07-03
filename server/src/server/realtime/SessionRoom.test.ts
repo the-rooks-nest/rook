@@ -50,7 +50,16 @@ describe("SessionRoom", () => {
 
   it("replays unresolved environment offers to late-joining subscribers", () => {
     const room = createRoom(new TestAgent());
-    room.onEnvironmentOffered("web:example.com", { sourceName: "Example" });
+    room.onEnvironmentOffered({
+      environmentId: "web:example.com",
+      bundleId: "contact",
+      bundleHash: "hash-1",
+      sourceName: "Example",
+      canonicalSourceUrl: "https://example.com",
+      skills: ["talk-to-consultant"],
+      mcpServers: [],
+      apps: [],
+    });
 
     const seen: AcpOutboundMessage[] = [];
     const unsubscribe = room.subscribe((event) => {
@@ -67,7 +76,16 @@ describe("SessionRoom", () => {
             update: expect.objectContaining({
               sessionUpdate: "_rookery_environment_event",
               kind: ENVIRONMENT_OFFER_AVAILABLE_KIND,
-              payload: { environmentId: "web:example.com", sourceName: "Example" },
+              payload: {
+                environmentId: "web:example.com",
+                bundleId: "contact",
+                bundleHash: "hash-1",
+                sourceName: "Example",
+                canonicalSourceUrl: "https://example.com",
+                skills: ["talk-to-consultant"],
+                mcpServers: [],
+                apps: [],
+              },
             }),
           }),
         }),
@@ -77,8 +95,17 @@ describe("SessionRoom", () => {
 
   it("does not replay environment offers after they are resolved", () => {
     const room = createRoom(new TestAgent());
-    room.onEnvironmentOffered("web:example.com", { sourceName: "Example" });
-    room.onEnvironmentResolved("web:example.com", "approved");
+    room.onEnvironmentOffered({
+      environmentId: "web:example.com",
+      bundleId: "contact",
+      bundleHash: "hash-1",
+      sourceName: "Example",
+      canonicalSourceUrl: undefined,
+      skills: ["talk-to-consultant"],
+      mcpServers: [],
+      apps: [],
+    });
+    room.onEnvironmentResolved("web:example.com", "contact", "hash-1", "approved");
 
     const seen: AcpOutboundMessage[] = [];
     const unsubscribe = room.subscribe((event) => {

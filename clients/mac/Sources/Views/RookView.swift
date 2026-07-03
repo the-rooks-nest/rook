@@ -423,11 +423,11 @@ private struct HomeContent: View {
                                 .fill(PanelPalette.warning.opacity(0.18))
                         )
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(model.pendingOfferCount > 1 ? "Environments available" : "Environment available")
+                        Text(model.pendingOfferCount > 1 ? "Bundles available" : "Bundle available")
                             .font(.subheadline)
                             .fontWeight(.semibold)
                         HStack(spacing: 6) {
-                            Text(model.pendingOffer?.environmentId ?? "")
+                            Text(model.pendingOffer?.bundleId ?? model.pendingOffer?.environmentId ?? "")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)

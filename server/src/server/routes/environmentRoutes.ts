@@ -38,20 +38,9 @@ export async function registerEnvironmentRoutes(
     return { ok: true, id: trimmedId, registeredAt };
   });
 
-  app.post<{ Body: { id?: unknown } }>("/api/environments/unregister", async (request, reply) => {
-    const id = request.body?.id;
-    if (typeof id !== "string" || !id.trim()) {
-      reply.code(400).send({ error: "Missing environment id" });
-      return;
-    }
-    const trimmedId = id.trim();
-    request.log.info({ environmentId: trimmedId }, "environment unregistered");
-    environmentManager.unregister(trimmedId);
-    return { ok: true };
-  });
-
-  app.post<{ Body: { environmentId?: unknown; decision?: unknown } }>("/api/environments/decision", async (request, reply) => {
+  app.post<{ Body: { environmentId?: unknown; bundleHash?: unknown; decision?: unknown } }>("/api/environments/decision", async (request, reply) => {
     const environmentId = request.body?.environmentId;
+    const bundleHash = typeof request.body?.bundleHash === "string" && request.body.bundleHash.trim() ? request.body.bundleHash.trim() : undefined;
     const decision = request.body?.decision;
     if (typeof environmentId !== "string" || !environmentId.trim()) {
       reply.code(400).send({ error: "Missing environmentId" });
@@ -62,8 +51,8 @@ export async function registerEnvironmentRoutes(
       return;
     }
     const trimmedEnvironmentId = environmentId.trim();
-    request.log.info({ environmentId: trimmedEnvironmentId, decision }, "environment decision recorded");
-    environmentManager.decideEnvironment(trimmedEnvironmentId, decision as EnvironmentDecision);
+    request.log.info({ environmentId: trimmedEnvironmentId, bundleHash, decision }, "environment decision recorded");
+    environmentManager.decideEnvironment(trimmedEnvironmentId, decision as EnvironmentDecision, bundleHash);
     return { ok: true };
   });
 

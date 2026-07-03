@@ -37,7 +37,7 @@ export interface BuildServerOptions {
   roomIdleTimeoutMs?: number;
   /** SQLite location for persistent environment decisions; ":memory:" in tests. */
   environmentDecisionStoreLocation?: string;
-  /** Active environment window. Defaults to 6 minutes. */
+  /** Active environment window. Defaults to 5m15s. */
   environmentActiveWindowMs?: number;
   /** Retention for recent inactive environments. Defaults to 30 minutes. */
   environmentRecentRetentionMs?: number;
@@ -73,7 +73,7 @@ export async function buildServer(options: BuildServerOptions = {}) {
   const environmentRepositoryService = new EnvironmentRepositoryService(environmentRepository);
   const environmentDecisionStore = new EnvironmentDecisionStore(options.environmentDecisionStoreLocation);
   const environmentManager = new EnvironmentManager(environmentRepositoryService, environmentDecisionStore, {
-    activeEnvironmentWindowMs: options.environmentActiveWindowMs ?? Number(process.env.ROOK_ENVIRONMENT_ACTIVE_WINDOW_MS ?? 6 * 60_000),
+    activeEnvironmentWindowMs: options.environmentActiveWindowMs ?? Number(process.env.ROOK_ENVIRONMENT_ACTIVE_WINDOW_MS ?? 5 * 60_000 + 15_000),
     recentEnvironmentRetentionMs: options.environmentRecentRetentionMs ?? Number(process.env.ROOK_ENVIRONMENT_RECENT_RETENTION_MS ?? 30 * 60_000),
     logger: app.log,
   });

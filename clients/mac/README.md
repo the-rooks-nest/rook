@@ -33,16 +33,16 @@ WebSocket protocol. For repo-level setup, `.env`, binding, and auth, start with
   auto-send after the current turn (120 ms gap), matching the web client, with
   queue edit / delete / send-now controls (`_rookery/steering_prompt`).
 - **Environment offers** - `environment_offer_available` events open a native
-  approval view with bundle-file preview (`GET /api/environments/preview`) and
-  the four 2×2 decisions (`POST /api/environments/decision`): allow this
-  visit / always allow / not now / never.
+  bundle-level approval view showing the offered bundle name plus the names of
+  any bundled skills, MCP servers, and apps, with the four 2×2 decisions
+  (`POST /api/environments/decision`): allow this visit / always allow /
+  not now / never.
 - **Server supervision** - health polling; if the server is down the panel can
   launch `npm run dev` for the repo and tail its log
   (`~/Library/Logs/Rook/server.log`).
-- **Mac environment provider** - the app immediately registers foreground
-  environments, keeps them alive with periodic re-registration, forgets them
-  after 5 minutes without foreground, and explicitly unregisters closed apps /
-  closed pages.
+- **Mac environment provider** - the app immediately registers newly seen
+  user-visible environments, keeps them alive with periodic re-registration,
+  and forgets them locally after 4m45s without renewed user-visible focus.
 
 ## Voice (hands-free)
 
@@ -105,9 +105,9 @@ Live) as an I/O layer that forwards to Rook as the brain.
 ## Foreground-app environments
 
 The Mac app now keeps an in-memory cache of **encountered** environments.
-Encountering means the environment became foreground on the Mac. Each encounter
-immediately registers the environment and starts a configurable 5-minute local
-liveness window.
+Encountering means the environment became foreground on the Mac or appeared in a
+startup/wake visible snapshot. Newly encountered environments register
+immediately and start a configurable 5-minute local TTL window.
 
 Tracked foreground environments include:
 
@@ -132,24 +132,19 @@ For Obsidian, vault parsing is title-based and works backwards so note names may
 contain dashes safely. For plain apps the base identity is the bundle id:
 `app:<bundleId>`.
 
-Each encounter registers with a fresh `registeredAt` timestamp (`POST
-/api/environments/register`). If the same cached environment stays live, the
-Mac performs a scheduled keepalive re-register every 5 minutes. If it is not
-foreground again within 5 minutes, it simply falls out of the Mac cache and is
-**not** unregistered; the server ages it out on its own.
+Each newly encountered environment registers with a fresh `registeredAt`
+timestamp (`POST /api/environments/register`). If the same cached environment
+stays within its local TTL, the Mac performs a scheduled keepalive re-register
+every 5 minutes. If it is not brought back into user-visible focus within
+4m45s, it simply falls out of the Mac cache; the server ages it out on its
+own.
 
 Non-user timers/polls do **not** discover new environments. They are used only
 for:
 
-- explicit closure cleanup
+- local TTL expiry cleanup of already-cached environments
 - scheduled keepalive re-register of already-cached environments
 - server/wake reconciliation of currently visible environments
-
-The Mac app only calls `POST /api/environments/unregister` for explicit closure
-cases it can observe:
-
-- an encountered app has quit
-- an encountered browser page/tab is no longer open
 
 Foreground activations are still debounced (700 ms) so ⌘-Tab flicker doesn't
 thrash the richer foreground context, the app ignores its own activations

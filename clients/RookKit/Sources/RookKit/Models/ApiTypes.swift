@@ -176,17 +176,19 @@ public struct EnvironmentBundlePreview: Codable, Equatable, Identifiable {
     public let environmentId: String
     public let repository: String
     public let valid: Bool
+    public let bundleHash: String
     public let skills: [EnvironmentArtifactPreview]
     public let mcpServers: [EnvironmentArtifactPreview]
     public let apps: [EnvironmentArtifactPreview]
     public let errors: [RepositoryReadError]
 
-    public init(id: String, bundleId: String, environmentId: String, repository: String, valid: Bool, skills: [EnvironmentArtifactPreview], mcpServers: [EnvironmentArtifactPreview], apps: [EnvironmentArtifactPreview], errors: [RepositoryReadError]) {
+    public init(id: String, bundleId: String, environmentId: String, repository: String, valid: Bool, bundleHash: String, skills: [EnvironmentArtifactPreview], mcpServers: [EnvironmentArtifactPreview], apps: [EnvironmentArtifactPreview], errors: [RepositoryReadError]) {
         self.id = id
         self.bundleId = bundleId
         self.environmentId = environmentId
         self.repository = repository
         self.valid = valid
+        self.bundleHash = bundleHash
         self.skills = skills
         self.mcpServers = mcpServers
         self.apps = apps
@@ -223,12 +225,22 @@ public struct EnvironmentPreview: Codable, Equatable {
 
 public struct EnvironmentOffer: Equatable {
     public let environmentId: String
+    public let bundleId: String
+    public let bundleHash: String
     public let sourceName: String?
     public let canonicalSourceUrl: String?
+    public let skills: [String]
+    public let mcpServers: [String]
+    public let apps: [String]
 
-    public init(environmentId: String, sourceName: String?, canonicalSourceUrl: String?) {
+    public init(environmentId: String, bundleId: String, bundleHash: String, sourceName: String?, canonicalSourceUrl: String?, skills: [String], mcpServers: [String], apps: [String]) {
         self.environmentId = environmentId
+        self.bundleId = bundleId
+        self.bundleHash = bundleHash
         self.sourceName = sourceName
         self.canonicalSourceUrl = canonicalSourceUrl
+        self.skills = skills
+        self.mcpServers = mcpServers
+        self.apps = apps
     }
 }

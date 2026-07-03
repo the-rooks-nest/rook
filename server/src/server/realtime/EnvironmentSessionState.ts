@@ -4,13 +4,13 @@ import {
 } from "../../shared/environment.js";
 import type { AcpSessionUpdateNotification } from "../../shared/acp.js";
 import type { AcpOutboundMessage, EnvironmentEventPayload } from "../../shared/realtime.js";
-import type { EnvironmentOfferInfo, EnvironmentResolution } from "../environment/types.js";
+import type { EnvironmentBundleOffer, EnvironmentResolution } from "../environment/types.js";
 import type { RuntimeRebuilder, RoomRuntime } from "./SessionRoom.js";
 
 export class EnvironmentSessionState {
   private baseSkillPaths: string[] = [];
   private readonly environmentSkillPaths = new Map<string, string[]>();
-  private readonly pendingEnvironmentOffers = new Map<string, EnvironmentOfferInfo>();
+  private readonly pendingEnvironmentOffers = new Map<string, EnvironmentBundleOffer>();
   private rebuildRuntime: RuntimeRebuilder | null = null;
 
   configureRuntime(baseSkillPaths: string[], rebuild: RuntimeRebuilder): void {
@@ -19,19 +19,19 @@ export class EnvironmentSessionState {
     this.rebuildRuntime = rebuild;
   }
 
-  offer(environmentId: string, info: EnvironmentOfferInfo): EnvironmentEventPayload {
-    this.pendingEnvironmentOffers.set(environmentId, info);
+  offer(offer: EnvironmentBundleOffer): EnvironmentEventPayload {
+    this.pendingEnvironmentOffers.set(offer.bundleHash, offer);
     return {
       kind: ENVIRONMENT_OFFER_AVAILABLE_KIND,
-      payload: { environmentId, ...info },
+      payload: offer,
     };
   }
 
-  resolve(environmentId: string, resolution: EnvironmentResolution): EnvironmentEventPayload {
-    this.pendingEnvironmentOffers.delete(environmentId);
+  resolve(environmentId: string, bundleId: string, bundleHash: string, resolution: EnvironmentResolution): EnvironmentEventPayload {
+    this.pendingEnvironmentOffers.delete(bundleHash);
     return {
       kind: ENVIRONMENT_OFFER_RESOLVED_KIND,
-      payload: { environmentId, decision: resolution },
+      payload: { environmentId, bundleId, bundleHash, decision: resolution },
     };
   }
 
@@ -58,7 +58,7 @@ export class EnvironmentSessionState {
   }
 
   pendingOfferMessages(sessionId: string): AcpOutboundMessage[] {
-    return [...this.pendingEnvironmentOffers.entries()].map(([environmentId, info]) => {
+    return [...this.pendingEnvironmentOffers.values()].map((offer) => {
       const message: AcpSessionUpdateNotification = {
         jsonrpc: "2.0",
         method: "session/update",
@@ -67,7 +67,7 @@ export class EnvironmentSessionState {
           update: {
             sessionUpdate: "_rookery_environment_event",
             kind: ENVIRONMENT_OFFER_AVAILABLE_KIND,
-            payload: { environmentId, ...info },
+            payload: offer,
           },
         },
       };

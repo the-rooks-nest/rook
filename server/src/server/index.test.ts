@@ -491,8 +491,6 @@ describe("server", () => {
     const app = await buildServer({ enableClient: false, environmentDecisionStoreLocation: ":memory:" });
     const bad = await app.inject({ method: "POST", url: "/api/environments/decision", payload: { environmentId: "web:example.com", decision: "maybe" } });
     expect(bad.statusCode).toBe(400);
-    const unreg = await app.inject({ method: "POST", url: "/api/environments/unregister", payload: { id: "web:example.com" } });
-    expect(unreg.statusCode).toBe(200);
     await app.close();
   });
 

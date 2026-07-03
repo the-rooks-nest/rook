@@ -8,7 +8,6 @@ export interface LocationEnvironmentSink {
     info: { sourceName?: string; canonicalSourceUrl?: string },
     contextText?: string,
   ): Promise<void>;
-  unregister(environmentId: string): boolean;
   decideEnvironment(environmentId: string, decision: "accept" | "approve" | "ignore" | "reject"): void;
 }
 
@@ -67,7 +66,7 @@ function metadataFor(c: EnvironmentCandidate, current: boolean): Record<string, 
  * Registers the identified in-building set into the environment availability flow
  * (server-side, on each identify). Marks one best-guess "current" business that
  * auto-enters with a synthesized location-context skill; registers the same-building
- * neighbors so their (hierarchical) skills can load. Replaces the prior set each call.
+ * neighbors so their (hierarchical) skills can load. Refreshes the current set each call.
  */
 export class LocationRegistrar {
   private registeredIds: string[] = [];
@@ -84,14 +83,10 @@ export class LocationRegistrar {
     const nextIds = dwell ? candidates.map((c) => c.environmentId) : [];
     if (sameSet(nextIds, this.registeredIds)) return; // no change -> avoid agent churn
 
-    // Replace the whole prior set.
-    for (const id of this.registeredIds) {
-      this.manager.unregister(id);
-      this.contextRepo.clear(id);
+    if (!dwell || candidates.length === 0) {
+      this.registeredIds = [];
+      return; // moving through, or left the area
     }
-    this.registeredIds = [];
-
-    if (!dwell || candidates.length === 0) return; // moving through, or left the area
 
     const [current, ...nearby] = candidates;
     const contextDir = this.writeContextSkill(current, nearby);

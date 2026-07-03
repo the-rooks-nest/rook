@@ -24,18 +24,27 @@ export interface EnvironmentOfferInfo {
   canonicalSourceUrl?: string;
 }
 
+export interface EnvironmentBundleOffer extends EnvironmentOfferInfo {
+  environmentId: string;
+  bundleId: string;
+  bundleHash: string;
+  skills: string[];
+  mcpServers: string[];
+  apps: string[];
+}
+
 /**
  * A subscribed SessionRoom's hooks into environment lifecycle. The EnvironmentManager
  * pushes these; the room turns them into runtime changes and client broadcasts.
  */
 export interface EnvironmentEventListener {
   /** Available + undecided: prompt this room's clients to decide. */
-  onEnvironmentOffered(environmentId: string, info: EnvironmentOfferInfo): void;
+  onEnvironmentOffered(offer: EnvironmentBundleOffer): void;
   /** Decision is accept/approve and the env is available: load skills (restart when idle).
    * `contextText` (when present) is ambient context pushed into the agent on enter. */
   onEnvironmentEntered(environmentId: string, skillPaths: string[], contextText?: string): void;
   /** Env left or was turned negative: remove skills (restart when idle). */
   onEnvironmentExited(environmentId: string): void;
   /** An offer was resolved (by any client, or because the env left): close prompts. */
-  onEnvironmentResolved(environmentId: string, resolution: EnvironmentResolution): void;
+  onEnvironmentResolved(environmentId: string, bundleId: string, bundleHash: string, resolution: EnvironmentResolution): void;
 }

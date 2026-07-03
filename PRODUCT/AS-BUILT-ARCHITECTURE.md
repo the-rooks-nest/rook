@@ -200,9 +200,9 @@ Current storage model is simple: local disk only.
 
 | Concept | Meaning |
 |---|---|
-| **active** | recently registered and not explicitly unregistered |
-| **recent** | seen recently, but either unregistered or past the active window |
-| **decision** | global allow/reject choice for that environment |
+| **active** | recently registered and still within the active window |
+| **recent** | seen recently, but now past the active window |
+| **decision** | allow/reject choice for an exact bundle-content hash |
 
 Decision model remains:
 
@@ -214,8 +214,9 @@ Decision model remains:
 Storage model:
 
 - active/recent environment memory lives in process memory
+- discovered bundles and their exact-content hashes live alongside each remembered environment in memory
 - ephemeral decisions (`accept`, `ignore`) live in memory
-- persistent decisions (`approve`, `reject`) live in SQLite
+- persistent decisions (`approve`, `reject`) live in SQLite keyed by bundle-content hash
 
 ### 6.4 How environments affect sessions
 
@@ -224,12 +225,13 @@ When an environment becomes available:
 1. providers call `/api/environments/register`
 2. the Mac provider does this immediately on foreground encounter, and also on wake/server-reconnect reconciliation for currently visible environments
 3. `EnvironmentManager` stores the exact registration in memory with its latest touch time
-4. on registration, it also consults the repository and remembers any valid bundle ids plus the `.bundles/` collection path(s) associated with that environment
-5. the environment is counted as **active** for a configurable active window (currently 6 minutes)
-6. explicit `/api/environments/unregister` moves it to **recent** immediately
-7. inactive/recent entries remain in memory for a longer retention window (currently 30 minutes), then are forgotten
+4. on registration, it also consults the repository, resolves any valid bundles, hashes their text contents, and remembers the bundle ids plus `.bundles/` collection path(s) associated with that environment
+5. any active, undecided bundles are offered to subscribed sessions for review
+6. the environment is counted as **active** for a configurable active window (currently 5m15s)
+7. when an environment is no longer refreshed, it naturally ages from **active** to **recent** and any pending bundle offers resolve as unavailable
+8. inactive/recent entries remain in memory for a longer retention window (currently 30 minutes), then are forgotten
 
-Current simplification: registration is intentionally not yet loading bundle capabilities into rooms or rebuilding runtimes.
+Current simplification: registration is intentionally not yet loading bundle capabilities into rooms or rebuilding runtimes; it currently stops at bundle discovery, hashing, and offer/decision flow.
 
 ### 6.5 Environment-to-agent bridge
 
@@ -273,7 +275,7 @@ Current ecosystem around `:3000`:
 
 - **Chrome extension**: detects supported web contexts and registers `web:<slug>` environments
 - **Obsidian plugin**: embeds the app in a sidebar view
-- **macOS menu bar app**: native SwiftUI client with the same backend; registers foreground app/page encounters, re-registers them every 5 minutes while still live, and unregisters only explicitly closed apps/pages
+- **macOS menu bar app**: native SwiftUI client with the same backend; registers newly seen user-visible app/page encounters, re-registers them every 5 minutes while still in its local TTL cache, and otherwise lets the server age them out
 - **iPhone app**: native SwiftUI client that registers `loc:<slug>` environments from GPS geofences, making the agent location-aware (skills load as you arrive at a defined place). It also drives ptiles-based business discovery on arrival, registering `loc:<domain>/…` environments — see [`location-environment-awareness.md`](./location-environment-awareness.md). Adds Live Activity / Dynamic Island presence and on-device voice.
 
 The two native Swift clients share one cross-platform layer — models, the REST/ACP-WebSocket clients, the design system and chat-block views, voice, and Live Activity attributes — through the `clients/RookKit` Swift package, so they stay protocol- and design-consistent with a single source of truth.
@@ -331,8 +333,7 @@ Current major routes:
 - `GET /api/agent/session/recent`
 - `POST /api/agent/start`
 - `POST /api/environments/register`
-- `POST /api/environments/unregister`
-- `POST /api/environments/decision`
+- `POST /api/environments/decision` (bundle-level 2×2 decision keyed by exact bundle hash)
 - `POST /api/environments/identify` (read-only: coordinate → candidate `loc:` environments)
 - `POST /api/environments/register-location` (identify + register/auto-enter the dwell set)
 - `GET /api/environments/preview`
@@ -360,7 +361,7 @@ Current local mutable state is under `.var/rook/`.
 
 Important pieces:
 
-- `environment-decisions.sqlite` - persistent environment approvals/rejections
+- `environment-decisions.sqlite` - persistent bundle approvals/rejections keyed by exact bundle hash
 - generated Pi launchers
 - session records in `sessionLog.ts` backing saved/restartable sessions
 
@@ -385,8 +386,8 @@ The debug bridge CLI and the server import from `server/src/shared/`. The server
 
 1. **One live room per session id.**
 2. **ACP is the primary protocol on both sides of the server.**
-3. **Environment decisions are global, and current environment availability is process-local memory.**
-4. **`EnvironmentManager` currently logs/cache-manages registrations rather than rebuilding runtimes.**
+3. **Environment bundle decisions are keyed by exact bundle-content hash, and current environment availability is process-local memory.**
+4. **`EnvironmentManager` currently discovers/hashes/offers bundles on registration rather than rebuilding runtimes.**
 5. **Session restoration depends on saved restart metadata plus ACP `session/load`.**
 6. **Pi-specific behavior should stay inside `PiAgent` or `pi-acp`, not leak into the client.**
 

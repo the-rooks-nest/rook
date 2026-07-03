@@ -326,7 +326,7 @@ final class RookModel: ObservableObject {
     }
 
     /// Mirrors `RookMacModel.handleForegroundApp`: diff the current place
-    /// against the registered environment, unregister the old, register the new
+    /// against the registered environment and register the new one
     /// (only if the server has skills for it — the iOS analog of the Mac's
     /// on-disk skill-bundle guard, done via the preview endpoint).
     private func handlePlace(_ place: Place?) {
@@ -335,13 +335,9 @@ final class RookModel: ObservableObject {
         guard envId != placeEnvironmentId else {
             return
         }
-        let previous = placeEnvironmentId
         placeEnvironmentId = envId
         updateLiveActivity()
         Task {
-            if let previous {
-                try? await api.unregisterEnvironment(id: previous)
-            }
             guard let place, let envId else {
                 return
             }
@@ -587,8 +583,8 @@ final class RookModel: ObservableObject {
     /// intentionally (silent — no phantom "connection lost") and stop any
     /// in-flight run spinner cleanly; reconnect on return. The place
     /// environment is deliberately NOT released here: region monitoring keeps
-    /// running in the background, so you're still "at" the place — physically
-    /// leaving the geofence (`didExitRegion`) is what unregisters it.
+    /// running in the background, so you're still "at" the place, and the
+    /// server will age old registrations out if they stop being refreshed.
     func handleEnteredBackground() {
         guard currentSession != nil else {
             return
@@ -834,8 +830,8 @@ final class RookModel: ObservableObject {
             appendErrorBlock(source: "connection", message: message)
         case .environmentOffered(let offer):
             handleEnvironmentOffered(offer)
-        case .environmentOfferResolved(let environmentId):
-            handleEnvironmentOfferResolved(environmentId)
+        case .environmentOfferResolved(let environmentId, let bundleHash):
+            handleEnvironmentOfferResolved(environmentId, bundleHash: bundleHash)
         case .environmentEntered(let environmentId):
             if enteredEnvironments.insert(environmentId).inserted {
                 let entered = nearbyCandidates.first { $0.environmentId == environmentId }
@@ -956,19 +952,11 @@ final class RookModel: ObservableObject {
         pendingOffer = offer
         offerBundles = []
         offerError = ""
-        offerLoading = true
-        Task {
-            do {
-                offerBundles = try await api.environmentPreview(environmentId: offer.environmentId).bundles
-            } catch {
-                offerError = error.localizedDescription
-            }
-            offerLoading = false
-        }
+        offerLoading = false
     }
 
-    private func handleEnvironmentOfferResolved(_ environmentId: String) {
-        guard pendingOffer?.environmentId == environmentId else {
+    private func handleEnvironmentOfferResolved(_ environmentId: String, bundleHash: String) {
+        guard pendingOffer?.environmentId == environmentId, pendingOffer?.bundleHash == bundleHash else {
             return
         }
         clearOffer()
@@ -980,9 +968,9 @@ final class RookModel: ObservableObject {
         }
         Task {
             do {
-                try await api.decideEnvironment(environmentId: offer.environmentId, decision: decision)
+                try await api.decideEnvironment(environmentId: offer.environmentId, bundleHash: offer.bundleHash, decision: decision)
                 if decision == "accept" || decision == "approve" {
-                    appendBlock(.system(text: "Environment \(offer.environmentId) allowed — agent reloads its skills when idle."))
+                    appendBlock(.system(text: "Bundle \(offer.bundleId) allowed for \(offer.environmentId)."))
                 }
             } catch {
                 offerError = error.localizedDescription

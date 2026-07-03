@@ -3,6 +3,7 @@ import type { EnvironmentBundle, BundleArtifact, RepositoryReadError } from "./e
 export interface BundleArtifactPreview extends BundleArtifact {}
 
 export interface EnvironmentBundlePreview extends Pick<EnvironmentBundle, "id" | "bundleId" | "environmentId" | "repository" | "valid"> {
+  bundleHash: string;
   skills: BundleArtifactPreview[];
   mcpServers: BundleArtifactPreview[];
   apps: BundleArtifactPreview[];
@@ -24,12 +25,19 @@ export const ENVIRONMENT_EXITED_KIND = "environment_exited";
 
 export interface EnvironmentOfferAvailablePayload {
   environmentId: string;
+  bundleId: string;
+  bundleHash: string;
   sourceName?: string;
   canonicalSourceUrl?: string;
+  skills: string[];
+  mcpServers: string[];
+  apps: string[];
 }
 
 export interface EnvironmentOfferResolvedPayload {
   environmentId: string;
+  bundleId: string;
+  bundleHash: string;
   decision: "approved" | "dismissed" | "unavailable";
 }
 

@@ -380,13 +380,25 @@ public final class AcpSocket {
         }
         switch kind {
         case "environment_offer_available":
+            guard let bundleId = payload["bundleId"] as? String,
+                  let bundleHash = payload["bundleHash"] as? String else {
+                return
+            }
             onEvent?(.environmentOffered(EnvironmentOffer(
                 environmentId: environmentId,
+                bundleId: bundleId,
+                bundleHash: bundleHash,
                 sourceName: payload["sourceName"] as? String,
-                canonicalSourceUrl: payload["canonicalSourceUrl"] as? String
+                canonicalSourceUrl: payload["canonicalSourceUrl"] as? String,
+                skills: payload["skills"] as? [String] ?? [],
+                mcpServers: payload["mcpServers"] as? [String] ?? [],
+                apps: payload["apps"] as? [String] ?? []
             )))
         case "environment_offer_resolved":
-            onEvent?(.environmentOfferResolved(environmentId: environmentId))
+            guard let bundleHash = payload["bundleHash"] as? String else {
+                return
+            }
+            onEvent?(.environmentOfferResolved(environmentId: environmentId, bundleHash: bundleHash))
         case "environment_entered":
             onEvent?(.environmentEntered(environmentId: environmentId))
         case "environment_exited":
