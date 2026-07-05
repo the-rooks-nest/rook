@@ -84,6 +84,10 @@ class LocationController private constructor(private val appContext: Context) {
         appContext.stopService(Intent(appContext, MovementService::class.java))
     }
 
+    fun startPresenceService() {
+        ContextCompat.startForegroundService(appContext, Intent(appContext, com.rookery.rook.RookPresenceService::class.java))
+    }
+
     // MARK: - Recording (accel + GPS capture, RecordingService owns the file)
 
     private val _recording = MutableStateFlow<RecordingInfo?>(null)

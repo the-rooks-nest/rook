@@ -22,6 +22,7 @@ class MainActivity : ComponentActivity() {
         // shares this instance while the app is alive.
         val controller = LocationController.getInstance(applicationContext)
         serverUrl?.let { controller.baseUrl = it }
+        controller.startPresenceService()
         // DEBUG/E2E: `am start --es simulate_arrival "lat,lon"` fires a synthetic arrival —
         // the Android analog of iOS's ROOK_SIMULATE_ARRIVAL. Debuggable builds only (≈ #if DEBUG).
         val simulateArrival = if (isDebuggable()) parseLatLon(intent.getStringExtra(EXTRA_SIMULATE_ARRIVAL)) else null
