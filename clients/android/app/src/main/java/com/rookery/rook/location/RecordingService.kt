@@ -194,7 +194,7 @@ class RecordingService : Service(), SensorEventListener {
         val notification = builder
             .setContentTitle("Rook — recording")
             .setContentText("Logging accelerometer + GPS")
-            .setSmallIcon(android.R.drawable.ic_menu_save)
+            .setSmallIcon(com.rookery.rook.R.drawable.ic_notification)
             .setOngoing(true)
             .setContentIntent(pending)
             .build()

@@ -258,7 +258,7 @@ class MovementService : Service(), SensorEventListener {
         return builder
             .setContentTitle("Rook")
             .setContentText("Detecting places you visit")
-            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+            .setSmallIcon(com.rookery.rook.R.drawable.ic_notification)
             .setOngoing(true)
             .setContentIntent(pending)
             .build()

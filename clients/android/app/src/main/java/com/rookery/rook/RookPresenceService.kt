@@ -54,7 +54,7 @@ class RookPresenceService : Service() {
         return builder
             .setContentTitle("Rook")
             .setContentText("Running")
-            .setSmallIcon(android.R.drawable.sym_def_app_icon)
+            .setSmallIcon(com.rookery.rook.R.drawable.ic_notification)
             .setOngoing(true)
             .setContentIntent(pending)
             .build()
