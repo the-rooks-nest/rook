@@ -548,7 +548,12 @@ class RookViewModel(
             }
 
             is AcpClientEvent.ProtocolError -> appendErrorBlock("protocol", event.message)
-            is AcpClientEvent.ConnectionError -> appendErrorBlock("connection", event.message)
+            is AcpClientEvent.ConnectionError -> {
+                appendErrorBlock("connection", event.message)
+                // Agent process died server-side — force a session restart by
+                // disconnecting the socket, which triggers the reconnect flow.
+                socket.disconnect()
+            }
 
             is AcpClientEvent.EnvironmentOffered -> {
                 // Ignore a duplicate re-offer of the environment already pending.
