@@ -160,6 +160,9 @@ fun SettingsScreen(viewModel: RookViewModel) {
             Text("Define places with the map-pin button on the agent list.", fontSize = 11.sp, color = PanelPalette.textMuted)
         }
 
+
+        // MARK: Background Usage
+        BackgroundUsageCard()
         // MARK: Record (accel + GPS capture for tuning the movement classifier)
         PanelCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -207,8 +210,6 @@ fun SettingsScreen(viewModel: RookViewModel) {
             }
         }
 
-        // MARK: Battery
-        BatteryOptimizationCard()
     }
 
     if (showDisclosure) {
@@ -287,40 +288,35 @@ private fun locationStatusTint(status: LocationAuthStatus): Color = when (status
 }
 
 @Composable
-private fun BatteryOptimizationCard() {
+private fun BackgroundUsageCard() {
     val context = LocalContext.current
     val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
     val isExempt = pm.isIgnoringBatteryOptimizations(context.packageName)
 
     PanelCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Battery", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = PanelPalette.textNormal)
+            Text("Background Usage", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = PanelPalette.textNormal)
             Spacer(Modifier.weight(1f))
             Text(
-                if (isExempt) "Optimized" else "Restricted",
+                if (isExempt) "Enabled" else "Restricted",
                 fontSize = 11.sp,
                 color = if (isExempt) PanelPalette.success else PanelPalette.warning
             )
         }
         Text(
-            if (isExempt) "Rook is exempt from battery optimization — background connections stay alive."
-            else "Android may suspend Rook's network in the background. Disable battery optimization to keep the server connection alive.",
+            if (isExempt) "Rook can run in the background — the server connection stays alive."
+            else "Android may suspend Rook in the background. Allow background activity to keep the server connection alive.",
             fontSize = 11.sp,
             color = PanelPalette.textMuted
         )
-        if (!isExempt) {
-            PanelButton(
-                text = "Disable battery optimization",
-                onClick = {
-                    val intent = Intent(
-                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                        Uri.parse("package:${context.packageName}")
-                    )
-                    context.startActivity(intent)
-                },
-                modifier = Modifier.fillMaxWidth(),
-                tint = PanelPalette.warning
-            )
-        }
+        PanelButton(
+            text = if (isExempt) "App settings" else "Allow background activity",
+            onClick = {
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+                context.startActivity(intent)
+            },
+            modifier = Modifier.fillMaxWidth(),
+            tint = if (isExempt) PanelPalette.accent else PanelPalette.warning
+        )
     }
 }
