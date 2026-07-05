@@ -2,8 +2,8 @@
 
 A native Android client at feature parity with the iOS/Mac apps — the fourth
 [Rook](../../README.md) client, speaking the same REST + ACP-over-WebSocket
-contract. No server changes required. See `.claude/commands/goal.md` for the
-full build plan and source-of-truth mapping to the Swift clients.
+contract. No server changes required. Ported from the Swift clients in
+`clients/RookKit/` and `clients/iphone/`.
 
 ## Getting it running
 
