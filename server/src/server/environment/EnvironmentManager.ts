@@ -3,14 +3,13 @@ import type { EnvironmentDecisionStore } from "./EnvironmentDecisionStore.js";
 import type { EnvironmentPreview } from "../../shared/environment.js";
 import type { EnvironmentRepositoryService } from "./EnvironmentRepositoryService.js";
 import { ensureDefaultEnvironmentBinding, renderEnvironmentBindingPrompt } from "./EnvironmentBinding.js";
+import { SessionDecisionRegistry } from "./SessionDecisionRegistry.js";
 import type {
-  EnvironmentBundleOffer,
   EnvironmentDecision,
   EnvironmentEventListener,
   EnvironmentOfferInfo,
   EnvironmentRecord,
   EffectiveDecision,
-  EphemeralDecision,
   EnvironmentResolution,
 } from "./types.js";
 
@@ -59,17 +58,22 @@ export interface EnvironmentManagerOptions {
 }
 
 /**
- * Simplified environment manager.
+ * Environment manager.
  *
- * Current behavior:
+ * Decision model (the 2×2):
+ *   positive × permanent = "approve" → SQLite, survives restarts
+ *   positive × session   = "accept"  → in-memory per-session, cleared on exit/expiry
+ *   negative × session   = "ignore"  → in-memory per-session, cleared on exit/expiry
+ *   negative × permanent = "reject"  → SQLite, survives restarts
+ *
+ * Behavior:
  * - keep environments in memory as either active or recent
  * - on registration, resolve any valid bundles and remember their exact-content hashes
- * - active = touched by register within the active window
- * - when the active window expires, the environment moves to recent
- * - recent entries are retained for a second, longer TTL before being forgotten
- * - log register / expiry activity
- * - push bundle offer / resolution events into subscribed rooms
- * - do not yet load bundle capabilities into runtimes during registration
+ * - bundle offers are only issued when a session enters an environment, not on registration
+ * - session decisions (accept/ignore) are per-session — session 2 entering the same env
+ *   sees its own fresh offers regardless of what session 1 decided
+ * - when a session exits an environment, its session decisions for that env are cleared
+ * - when a user approves/accepts, any session already inside the env gets skills reloaded
  */
 function environmentHierarchy(environmentId: string): string[] {
   const separator = environmentId.indexOf(":");
@@ -87,7 +91,7 @@ function environmentHierarchy(environmentId: string): string[] {
 
 export class EnvironmentManager {
   private readonly remembered = new Map<string, RememberedEnvironmentEntry>();
-  private readonly ephemeral = new Map<string, EphemeralDecision>();
+  private readonly sessionDecisions: SessionDecisionRegistry;
   private readonly listeners = new Map<string, EnvironmentEventListener>();
   private readonly explicitlyEntered = new Map<string, Set<string>>();
   private readonly entered = new Map<string, Set<string>>();
@@ -99,9 +103,10 @@ export class EnvironmentManager {
 
   constructor(
     private readonly repositoryService: EnvironmentRepositoryService,
-    private readonly decisions: EnvironmentDecisionStore,
+    decisions: EnvironmentDecisionStore,
     options: EnvironmentManagerOptions = {},
   ) {
+    this.sessionDecisions = new SessionDecisionRegistry(decisions);
     this.activeEnvironmentWindowMs = options.activeEnvironmentWindowMs ?? 6 * 60_000;
     this.recentEnvironmentRetentionMs = options.recentEnvironmentRetentionMs ?? 30 * 60_000;
     this.logger = options.logger ?? console;
@@ -171,26 +176,19 @@ export class EnvironmentManager {
     const currentBundleHashes = new Set(bundles.map((bundle) => bundle.bundleHash));
     for (const previousBundle of previousBundles) {
       if (currentBundleHashes.has(previousBundle.bundleHash)) continue;
-      this.ephemeral.delete(previousBundle.bundleHash);
+      this.sessionDecisions.clearAllForBundle(previousBundle.bundleHash);
       this.broadcastBundleResolution(env.id, previousBundle.bundleId, previousBundle.bundleHash, "unavailable");
     }
-    for (const bundle of bundles) {
-      if (previousBundleHashes.has(bundle.bundleHash)) continue;
-      if (this.effectiveDecision(bundle.bundleHash) !== "undecided") continue;
-      this.broadcastBundleOffer({
-        environmentId: env.id,
-        bundleId: bundle.bundleId,
-        bundleHash: bundle.bundleHash,
-        sourceName: info.sourceName,
-        canonicalSourceUrl: info.canonicalSourceUrl,
-        skills: bundle.skills,
-        mcpServers: bundle.mcpServers,
-        apps: bundle.apps,
-      });
-    }
+    // Offers are deferred until a session enters the environment (see syncEnteredEnvironments).
   }
 
-  decideEnvironment(environmentId: string, decision: EnvironmentDecision, bundleHash?: string): void {
+  /**
+   * Record a decision. Persistent decisions (approve/reject) go to SQLite.
+   * Session decisions (accept/ignore) are per-session in-memory and cleared on exit/expiry.
+   *
+   * @param sessionId required for session-scoped decisions (accept/ignore); optional for permanent.
+   */
+  decideEnvironment(environmentId: string, decision: EnvironmentDecision, bundleHash?: string, sessionId?: string): void {
     this.pruneMemory();
     const decisionKey = bundleHash ?? environmentId;
     const bundle = bundleHash
@@ -198,10 +196,17 @@ export class EnvironmentManager {
       : undefined;
 
     if (decision === "approve" || decision === "reject") {
-      this.decisions.setDecision(decisionKey, environmentId, bundle?.bundleId ?? null, decision);
-      this.ephemeral.delete(decisionKey);
+      // Permanent: store in SQLite, clear session-level overrides.
+      this.sessionDecisions.setPermanent(decisionKey, environmentId, bundle?.bundleId ?? null, decision);
     } else {
-      this.ephemeral.set(decisionKey, decision);
+      // Session-scoped: store per-session. If no sessionId is provided,
+      // apply to every session that has entered this environment (fallback).
+      const targetSessions = sessionId
+        ? [sessionId]
+        : [...this.entered.entries()].filter(([, envs]) => envs.has(environmentId)).map(([sid]) => sid);
+      for (const sid of targetSessions) {
+        this.sessionDecisions.setSession(sid, decisionKey, decision);
+      }
     }
 
     if (bundle) {
@@ -212,13 +217,24 @@ export class EnvironmentManager {
         decision === "accept" || decision === "approve" ? "approved" : "dismissed",
       );
     }
+
+    // When accepting or approving a bundle, reload skills for any session already inside this env.
+    if (decision === "accept" || decision === "approve") {
+      for (const [sid, entered] of this.entered.entries()) {
+        if (!entered.has(environmentId)) continue;
+        const listener = this.listeners.get(sid);
+        if (!listener) continue;
+        const entry = this.remembered.get(environmentId);
+        if (!entry || entry.status !== "active") continue;
+        listener.onEnvironmentEntered(environmentId, this.skillPathsForEntry(entry, sid), entry.contextText);
+      }
+    }
   }
 
-  effectiveDecision(bundleHash: string): EffectiveDecision {
+  /** Get the effective decision for a bundle hash from a session's perspective. */
+  effectiveDecision(bundleHash: string, sessionId?: string): EffectiveDecision {
     this.pruneMemory();
-    const ephemeral = this.ephemeral.get(bundleHash);
-    if (ephemeral) return ephemeral;
-    return this.decisions.getDecision(bundleHash) ?? "undecided";
+    return this.sessionDecisions.effective(bundleHash, sessionId);
   }
 
   subscribe(sessionId: string, listener: EnvironmentEventListener): void {
@@ -226,28 +242,14 @@ export class EnvironmentManager {
     this.listeners.set(sessionId, listener);
     if (!this.explicitlyEntered.has(sessionId)) this.explicitlyEntered.set(sessionId, new Set());
     if (!this.entered.has(sessionId)) this.entered.set(sessionId, new Set());
-    for (const entry of this.remembered.values()) {
-      if (entry.status !== "active") continue;
-      for (const bundle of entry.bundles) {
-        if (this.effectiveDecision(bundle.bundleHash) !== "undecided") continue;
-        listener.onEnvironmentOffered({
-          environmentId: entry.record.id,
-          bundleId: bundle.bundleId,
-          bundleHash: bundle.bundleHash,
-          sourceName: entry.info.sourceName,
-          canonicalSourceUrl: entry.info.canonicalSourceUrl,
-          skills: bundle.skills,
-          mcpServers: bundle.mcpServers,
-          apps: bundle.apps,
-        });
-      }
-    }
+    // Offers are deferred until the session enters an environment.
   }
 
   unsubscribe(sessionId: string): void {
     this.listeners.delete(sessionId);
     this.explicitlyEntered.delete(sessionId);
     this.entered.delete(sessionId);
+    this.sessionDecisions.clearSession(sessionId);
   }
 
   async getEnvironmentPreview(environmentId: string): Promise<EnvironmentPreview> {
@@ -309,7 +311,7 @@ export class EnvironmentManager {
     return this.syncEnteredEnvironments(sessionId, listener);
   }
 
-  diagnosticSnapshot(): DiagnosticEnvironmentEntry[] {
+  diagnosticSnapshot(sessionId?: string): DiagnosticEnvironmentEntry[] {
     this.pruneMemory();
     return [...this.remembered.entries()]
       .map(([environmentId, entry]) => ({
@@ -323,11 +325,11 @@ export class EnvironmentManager {
         contextText: entry.contextText,
         bundles: entry.bundles.map((bundle) => ({
           ...bundle,
-          effectiveDecision: this.effectiveDecision(bundle.bundleHash),
+          effectiveDecision: this.effectiveDecision(bundle.bundleHash, sessionId),
         })),
         bundleIds: entry.bundleIds,
         bundleCollectionPaths: entry.bundleCollectionPaths,
-        effectiveDecision: this.effectiveDecision(environmentId),
+        effectiveDecision: this.effectiveDecision(environmentId, sessionId),
       }))
       .sort((a, b) => {
         if (a.status !== b.status) return a.status === "active" ? -1 : 1;
@@ -346,7 +348,7 @@ export class EnvironmentManager {
   }[] {
     this.pruneMemory();
     const entered = this.entered.get(sessionId) ?? new Set();
-    const entries = this.diagnosticSnapshot();
+    const entries = this.diagnosticSnapshot(sessionId);
 
     const list = entries.map((entry) => {
       const approved = entry.bundles.filter(
@@ -384,12 +386,32 @@ export class EnvironmentManager {
       if (!entry || entry.status !== "active") continue;
 
       ensureDefaultEnvironmentBinding(environmentId);
-      listener.onEnvironmentEntered(environmentId, this.skillPathsForEntry(entry), entry.contextText);
+      listener.onEnvironmentEntered(environmentId, this.skillPathsForEntry(entry, sessionId), entry.contextText);
+
+      // Offer undecided bundles only when this session enters the environment.
+      for (const bundle of entry.bundles) {
+        if (this.effectiveDecision(bundle.bundleHash, sessionId) !== "undecided") continue;
+        listener.onEnvironmentOffered({
+          environmentId,
+          bundleId: bundle.bundleId,
+          bundleHash: bundle.bundleHash,
+          sourceName: entry.info.sourceName,
+          canonicalSourceUrl: entry.info.canonicalSourceUrl,
+          skills: bundle.skills,
+          mcpServers: bundle.mcpServers,
+          apps: bundle.apps,
+        });
+      }
     }
 
     for (const environmentId of current) {
       if (next.has(environmentId)) continue;
       listener.onEnvironmentExited(environmentId);
+      // Clear this session's decisions for the exited environment's bundles.
+      const entry = this.remembered.get(environmentId);
+      if (entry) {
+        this.sessionDecisions.clearSessionForBundles(sessionId, entry.bundles.map((b) => b.bundleHash));
+      }
     }
 
     this.entered.set(sessionId, next);
@@ -408,10 +430,10 @@ export class EnvironmentManager {
     return effective;
   }
 
-  private skillPathsForEntry(entry: RememberedEnvironmentEntry): string[] {
+  private skillPathsForEntry(entry: RememberedEnvironmentEntry, sessionId: string): string[] {
     const skillPaths: string[] = [];
     for (const bundle of entry.bundles) {
-      const decision = this.effectiveDecision(bundle.bundleHash);
+      const decision = this.sessionDecisions.effective(bundle.bundleHash, sessionId);
       if (decision !== "accept" && decision !== "approve") continue;
       if (!bundle.bundlePath) continue;
       for (const skillId of bundle.skills) {
@@ -419,12 +441,6 @@ export class EnvironmentManager {
       }
     }
     return skillPaths;
-  }
-
-  private broadcastBundleOffer(offer: EnvironmentBundleOffer): void {
-    for (const listener of this.listeners.values()) {
-      listener.onEnvironmentOffered(offer);
-    }
   }
 
   private broadcastBundleResolution(environmentId: string, bundleId: string, bundleHash: string, resolution: EnvironmentResolution): void {
@@ -448,9 +464,9 @@ export class EnvironmentManager {
             status: "recent",
             activeUntil: undefined,
           });
-          this.ephemeral.delete(environmentId);
+          // Clear all sessions' decisions for this environment's bundles.
+          this.sessionDecisions.clearAllForBundles(entry.bundles.map((b) => b.bundleHash));
           for (const bundle of entry.bundles) {
-            this.ephemeral.delete(bundle.bundleHash);
             this.broadcastBundleResolution(environmentId, bundle.bundleId, bundle.bundleHash, "unavailable");
           }
           this.logger.info(
@@ -469,10 +485,7 @@ export class EnvironmentManager {
         const lastTouchedAt = Date.parse(entry.lastTouchedAt);
         if (lastTouchedAt + this.recentEnvironmentRetentionMs > now) continue;
         this.remembered.delete(environmentId);
-        this.ephemeral.delete(environmentId);
-        for (const bundle of entry.bundles) {
-          this.ephemeral.delete(bundle.bundleHash);
-        }
+        this.sessionDecisions.clearAllForBundles(entry.bundles.map((b) => b.bundleHash));
         this.logger.info(
           {
             environmentId,

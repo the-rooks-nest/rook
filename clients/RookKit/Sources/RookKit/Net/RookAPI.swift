@@ -176,13 +176,14 @@ public struct RookAPI {
         return try JSONDecoder().decode(IdentifyResponse.self, from: data).candidates
     }
 
-    public func decideEnvironment(environmentId: String, bundleHash: String, decision: String) async throws {
+    public func decideEnvironment(environmentId: String, bundleHash: String, decision: String, sessionId: String) async throws {
         _ = try await postJSON(
             path: "api/environments/decision",
             payload: .object([
                 "environmentId": .string(environmentId),
                 "bundleHash": .string(bundleHash),
                 "decision": .string(decision),
+                "sessionId": .string(sessionId),
             ])
         )
     }

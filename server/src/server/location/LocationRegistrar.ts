@@ -8,7 +8,7 @@ export interface LocationEnvironmentSink {
     info: { sourceName?: string; canonicalSourceUrl?: string },
     contextText?: string,
   ): Promise<void>;
-  decideEnvironment(environmentId: string, decision: "accept" | "approve" | "ignore" | "reject"): void;
+  decideEnvironment(environmentId: string, decision: "accept" | "approve" | "ignore" | "reject", bundleHash?: string, sessionId?: string): void;
 }
 
 /** The slice of LocationContextRepository the registrar needs (eases testing). */

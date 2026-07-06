@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import type { PersistentDecision } from "./types.js";
+import type { PermanentDecision } from "./types.js";
 import { REPO_ROOT } from "../paths.js";
 
 /**
@@ -36,14 +36,14 @@ export class EnvironmentDecisionStore {
     `);
   }
 
-  getDecision(bundleHash: string): PersistentDecision | null {
+  getDecision(bundleHash: string): PermanentDecision | null {
     const row = this.db
       .prepare("SELECT decision FROM environment_decisions WHERE bundle_hash = ?")
-      .get(bundleHash) as { decision: PersistentDecision } | undefined;
+      .get(bundleHash) as { decision: PermanentDecision } | undefined;
     return row?.decision ?? null;
   }
 
-  setDecision(bundleHash: string, environmentId: string, bundleId: string | null, decision: PersistentDecision): void {
+  setDecision(bundleHash: string, environmentId: string, bundleId: string | null, decision: PermanentDecision): void {
     this.db
       .prepare(`
         INSERT INTO environment_decisions (bundle_hash, environment_id, bundle_id, decision, updated_at)
