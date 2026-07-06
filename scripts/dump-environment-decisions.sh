@@ -3,4 +3,4 @@
 # Run from repo root: ./scripts/dump-environment-decisions.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
-exec node --experimental-sqlite scripts/dump-environment-decisions.ts "$@"
+exec node --experimental-sqlite scripts/lib/dump-environment-decisions/dump-environment-decisions.ts "$@"

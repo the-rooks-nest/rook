@@ -22,9 +22,11 @@ function skillPathsFromRestartMetadata(restart: Record<string, unknown> | undefi
 export function attachRoomToEnvironments(room: SessionRoom, environmentManager: EnvironmentManager, baseSkillPaths: string[]): void {
   room.configureEnvironmentRuntime(baseSkillPaths, async (skillPaths) => {
     const restartMetadata = { ...room.session.restart, skillPaths };
+    const appendSystemPrompt = environmentManager.runtimeInstructionsForSession(room.sessionId);
     const agent = createAgent(room.agentId, restartMetadata, {
       skillPaths,
       extensionPaths: skillPaths.length > 0 ? [parentMessageToolExtensionPath] : [],
+      appendSystemPrompt,
     });
     await agent.ensureStarted();
     // If the rebuild had to start a fresh session (resume failed), track the new id so
@@ -57,6 +59,7 @@ export async function createOrReuseRoom(params: {
   const agent = createAgent(params.agentId, restartMetadata, {
     skillPaths: params.skillPaths,
     extensionPaths: effectiveSkillPaths.length > 0 ? [parentMessageToolExtensionPath] : [],
+    appendSystemPrompt: params.session ? params.environmentManager.runtimeInstructionsForSession(params.session.id) : undefined,
   });
   if (params.sessionName) agent.setSessionName(params.sessionName);
 

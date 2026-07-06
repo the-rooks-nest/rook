@@ -359,13 +359,19 @@ public final class AcpSocket {
             }
         case "_rookery_environment_event":
             handleEnvironmentEvent(update)
+        case "_rookery_status_changed":
+            // Agent stderr — surfaced so runtime diagnostics are visible in the UI.
+            if let message = update["message"] as? String, !message.isEmpty {
+                onEvent?(.protocolError(message: message))
+            }
         case "_rookery_protocol_error":
             onEvent?(.protocolError(message: update["error"] as? String ?? "Protocol error"))
         case "_rookery_connection_error":
             onEvent?(.connectionError(message: update["error"] as? String ?? "Connection error"))
         default:
-            // user_message_chunk echoes, _rookery_run_*, _rookery_status_changed,
-            // _rookery_assistant_* — intentionally ignored, matching the web client.
+            // user_message_chunk echoes, _rookery_run_*, _rookery_assistant_* —
+            // intentionally ignored. Run failures are surfaced through the
+            // JSON-RPC error response path, not through the event stream.
             break
         }
     }

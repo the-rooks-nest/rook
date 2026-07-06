@@ -238,6 +238,37 @@ private func disclosureHeader(
     .pointingHandOnHover()
 }
 
+/// Renders thinking text without textSelection during streaming to avoid
+/// per-update layout churn on very large accumulated text bodies.
+private struct ThinkingText: View {
+    var text: String
+    var lineLimit: Int?
+    var textSelectable: Bool
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11.5))
+            .italic()
+            .lineSpacing(2)
+            .foregroundStyle(.white)
+            .modifier(SelectableModifier(selectable: textSelectable))
+            .lineLimit(lineLimit)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct SelectableModifier: ViewModifier {
+    var selectable: Bool
+
+    func body(content: Content) -> some View {
+        if selectable {
+            content.textSelection(.enabled)
+        } else {
+            content
+        }
+    }
+}
+
 private struct ThinkingBlockView: View {
     private static let collapsedLineLimit = 5
 
@@ -268,22 +299,9 @@ private struct ThinkingBlockView: View {
                 }
 
                 if streaming || expanded || !isCollapsedByDefault {
-                    Text(text)
-                        .font(.system(size: 11.5))
-                        .italic()
-                        .lineSpacing(2)
-                        .foregroundStyle(.white)
-                        .textSelection(.enabled)
-                        .lineLimit(streaming || expanded ? nil : Self.collapsedLineLimit)
-                        .fixedSize(horizontal: false, vertical: true)
+                    ThinkingText(text: text, lineLimit: streaming || expanded ? nil : Self.collapsedLineLimit, textSelectable: !streaming)
                 } else {
-                    Text(text)
-                        .font(.system(size: 11.5))
-                        .italic()
-                        .lineSpacing(2)
-                        .foregroundStyle(.white)
-                        .textSelection(.enabled)
-                        .lineLimit(Self.collapsedLineLimit)
+                    ThinkingText(text: text, lineLimit: Self.collapsedLineLimit, textSelectable: true)
                 }
             }
             .padding(.horizontal, 12)

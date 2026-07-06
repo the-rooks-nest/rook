@@ -36,4 +36,4 @@ if [[ ! -f "$TSX" ]]; then
   exit 1
 fi
 
-exec node "$TSX" --tsconfig "$SERVER_ROOT/tsconfig.json" "$SCRIPT_DIR/interact-with-remote-agent.ts" "$@"
+exec node "$TSX" --tsconfig "$SERVER_ROOT/tsconfig.json" "$SCRIPT_DIR/lib/interact-with-remote-agent/interact-with-remote-agent.ts" "$@"

@@ -18,7 +18,7 @@ import path from "node:path";
 
 // Resolve REPO_ROOT the same way the server does (walk up from this script).
 const scriptDir = path.dirname(new URL(import.meta.url).pathname);
-const repoRoot = path.resolve(scriptDir, "..");
+const repoRoot = path.resolve(scriptDir, "..", "..", "..");
 
 const dbPath = path.join(repoRoot, ".var", "rook", "environment-decisions.sqlite");
 

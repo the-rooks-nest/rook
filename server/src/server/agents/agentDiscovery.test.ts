@@ -1,4 +1,6 @@
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { REPO_ROOT } from "../paths.js";
 
 describe("agentDiscovery", () => {
   afterEach(() => {
@@ -34,6 +36,9 @@ describe("agentDiscovery", () => {
     }) as unknown as { options: { env: Record<string, string> } };
     const launcherPath = piAgent.options.env.PI_ACP_PI_COMMAND;
     expect(launcherPath).toContain(".var/rook/generated/pi-launchers/");
+    const launcherSource = await (await import("node:fs/promises")).readFile(launcherPath, "utf8");
+    expect(launcherSource).toContain(JSON.stringify(path.join(REPO_ROOT, "skills", "create-skills")));
+    expect(launcherSource).toContain(JSON.stringify(path.join(REPO_ROOT, "dev-tools", "prompt-trace-logger.ts")));
 
     const claudeAgent = createAgent("MyClaudeAgent") as unknown as { options: { env: Record<string, string> } };
     expect(claudeAgent.options.env).toMatchObject({

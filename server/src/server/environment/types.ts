@@ -7,13 +7,20 @@ export interface EnvironmentRecord {
   metadata: Record<string, unknown>;
 }
 
-/** Decisions that persist across availability episodes (stored in SQLite). */
-export type PersistentDecision = "approve" | "reject";
+/**
+ * Permanently approve / permanently reject — durable decisions stored in SQLite,
+ * survive restarts and environment expiry.
+ */
+export type PermanentDecision = "approve" | "reject";
 
-/** Decisions scoped to the current availability episode (in-memory, cleared on unavailable). */
-export type EphemeralDecision = "accept" | "ignore";
+/**
+ * Approve for session / reject for session — scoped to one session's current
+ * environment visit. Stored in memory only, cleared when the session exits the
+ * environment or the environment expires.
+ */
+export type SessionDecision = "accept" | "ignore";
 
-/** Effective decision for an environment right now, or "undecided" if the user hasn't chosen. */
+/** Effective decision for a bundle hash from a session's perspective, or "undecided". */
 export type EffectiveDecision = EnvironmentDecision | "undecided";
 
 /** How an offer was closed — used to dismiss prompts across every client of a room. */
@@ -38,9 +45,9 @@ export interface EnvironmentBundleOffer extends EnvironmentOfferInfo {
  * pushes these; the room turns them into runtime changes and client broadcasts.
  */
 export interface EnvironmentEventListener {
-  /** Available + undecided: prompt this room's clients to decide. */
+  /** An undecided bundle the user should review (prompt in UI). */
   onEnvironmentOffered(offer: EnvironmentBundleOffer): void;
-  /** Decision is accept/approve and the env is available: load skills (restart when idle).
+  /** Skills to load for this environment (approved/permanently-approved bundles only).
    * `contextText` (when present) is ambient context pushed into the agent on enter. */
   onEnvironmentEntered(environmentId: string, skillPaths: string[], contextText?: string): void;
   /** Env left or was turned negative: remove skills (restart when idle). */

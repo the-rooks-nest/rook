@@ -146,8 +146,9 @@ Current design:
 - `PiAgent` is an ACP agent
 - it launches `pi-acp`
 - `pi-acp` in turn launches `pi`
-- a small generated launcher injects Pi args, skill paths, and extension paths
+- a small generated launcher injects Pi args, skill paths, extension paths, and any environment-specific appended system prompt text
 - the default profile still points Pi at the sibling `../my-agent/` package
+- every Pi session also gets the repo-local `skills/create-skills` skill at startup so the runtime always knows how to author new skills
 
 Generated Pi launch helpers are written under:
 
@@ -227,11 +228,11 @@ When an environment becomes available:
 3. `EnvironmentManager` stores the exact registration in memory with its latest touch time
 4. on registration, it also consults the repository, resolves any valid bundles, hashes their text contents, and remembers the bundle ids plus `.bundles/` collection path(s) associated with that environment
 5. any active, undecided bundles are offered to subscribed sessions for review
-6. the environment is counted as **active** for a configurable active window (currently 5m15s)
-7. when an environment is no longer refreshed, it naturally ages from **active** to **recent** and any pending bundle offers resolve as unavailable
-8. inactive/recent entries remain in memory for a longer retention window (currently 30 minutes), then are forgotten
-
-Current simplification: registration is intentionally not yet loading bundle capabilities into rooms or rebuilding runtimes; it currently stops at bundle discovery, hashing, and offer/decision flow.
+6. once a session enters an environment, `EnvironmentManager` creates the user-local binding bundle skeleton at `~/.rook/environment-repository/<kind>/<path>/.bundles/default/skills/`
+7. entered sessions rebuild their runtimes with the approved environment skills, and Pi runtimes also get appended startup instructions that explain where those per-environment skill roots live and list the currently entered environments plus metadata
+8. the environment is counted as **active** for a configurable active window (currently 5m15s)
+9. when an environment is no longer refreshed, it naturally ages from **active** to **recent** and any pending bundle offers resolve as unavailable
+10. inactive/recent entries remain in memory for a longer retention window (currently 30 minutes), then are forgotten
 
 ### 6.5 Environment-to-agent bridge
 

@@ -132,6 +132,13 @@ final class RookMacModel: ObservableObject {
     private var enteredEnvironments: Set<String> = []
     private var spokenTurnBuffer = ""
     private var userCancelledRun = false
+    // Streaming throttle: accumulate deltas off the published path so rapid
+    // token bursts don't stall the main thread with O(N²) string concat.
+    private var streamingTextAccumulator = ""
+    private var streamingIsThinking = false
+    private var streamingFlushTask: Task<Void, Never>?
+    private var toolArgBuffers: [String: String] = [:]
+    private var toolOutputBuffers: [String: String] = [:]
     private var autoResumeAttempted = false
     private var reconnectTask: Task<Void, Never>?
     private var queuedMessageCounter = 0
@@ -778,29 +785,22 @@ final class RookMacModel: ObservableObject {
                 }
             }
         case .toolInputSnapshot(let toolCallId, _, let text):
-            updateTool(toolCallId) { tool in
-                tool.status = .inputStreaming
-                tool.arguments = text
-            }
+            toolArgBuffers[toolCallId] = text
+            scheduleStreamingFlush()
         case .toolInputDelta(let toolCallId, _, let delta):
-            updateTool(toolCallId) { tool in
-                tool.status = .inputStreaming
-                tool.arguments += delta
-            }
+            toolArgBuffers[toolCallId, default: ""] += delta
+            scheduleStreamingFlush()
         case .toolCallReady(let toolCallId, _):
+            applyStreamingFlush()
             updateTool(toolCallId) { tool in
                 tool.status = .ready
             }
         case .toolOutputSnapshot(let toolCallId, _, let text):
-            updateTool(toolCallId) { tool in
-                tool.status = .running
-                tool.output = text
-            }
+            toolOutputBuffers[toolCallId] = text
+            scheduleStreamingFlush()
         case .toolOutputDelta(let toolCallId, _, let delta):
-            updateTool(toolCallId) { tool in
-                tool.status = .running
-                tool.output += delta
-            }
+            toolOutputBuffers[toolCallId, default: ""] += delta
+            scheduleStreamingFlush()
         case .permissionRequest(let requestId, let toolCall, let options):
             pendingPermission = PendingPermissionRequest(requestId: requestId, toolCall: toolCall, options: options)
             statusLine = "Permission needed: \(toolCall.title)"
@@ -912,27 +912,85 @@ final class RookMacModel: ObservableObject {
         appendBlock(.error(source: source, message: message))
     }
 
-    private func appendStreamingText(_ text: String, isThinking: Bool) {
-        if let last = blocks.indices.last {
-            switch blocks[last].kind {
-            case .assistantText(let existing, true) where !isThinking:
-                blocks[last].kind = .assistantText(text: existing + text, streaming: true)
-                return
-            case .thinking(let existing, true) where isThinking:
-                blocks[last].kind = .thinking(text: existing + text, streaming: true)
-                return
-            default:
-                break
-            }
-        }
-        if isThinking {
-            appendBlock(.thinking(text: text, streaming: true))
-        } else {
-            appendBlock(.assistantText(text: text, streaming: true))
+    // ---- streaming throttle ---------------------------------------------------
+    // Rapid token bursts from real agents cause O(N²) string concatenation per
+    // @Published mutation.  We accumulate deltas off the published path and
+    // flush at most once per display frame (~16ms).
+
+    private func scheduleStreamingFlush() {
+        streamingFlushTask?.cancel()
+        streamingFlushTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 16_000_000) // ~60 fps
+            guard !Task.isCancelled else { return }
+            applyStreamingFlush()
         }
     }
 
+    private func applyStreamingFlush() {
+        // Text (thinking / agent message)
+        if !streamingTextAccumulator.isEmpty {
+            if let last = blocks.indices.last {
+                switch blocks[last].kind {
+                case .assistantText(let existing, true) where !streamingIsThinking:
+                    blocks[last].kind = .assistantText(text: existing + streamingTextAccumulator, streaming: true)
+                    streamingTextAccumulator = ""
+                case .thinking(let existing, true) where streamingIsThinking:
+                    blocks[last].kind = .thinking(text: existing + streamingTextAccumulator, streaming: true)
+                    streamingTextAccumulator = ""
+                default:
+                    break
+                }
+            }
+            if !streamingTextAccumulator.isEmpty {
+                if streamingIsThinking {
+                    appendBlock(.thinking(text: streamingTextAccumulator, streaming: true))
+                } else {
+                    appendBlock(.assistantText(text: streamingTextAccumulator, streaming: true))
+                }
+                streamingTextAccumulator = ""
+            }
+        }
+
+        // Tool argument & output deltas
+        if !toolArgBuffers.isEmpty {
+            let snap = toolArgBuffers
+            toolArgBuffers = [:]
+            for (toolCallId, text) in snap {
+                updateTool(toolCallId) { tool in
+                    tool.status = .inputStreaming
+                    tool.arguments = text
+                }
+            }
+        }
+        if !toolOutputBuffers.isEmpty {
+            let snap = toolOutputBuffers
+            toolOutputBuffers = [:]
+            for (toolCallId, text) in snap {
+                updateTool(toolCallId) { tool in
+                    tool.status = .running
+                    tool.output = text
+                }
+            }
+        }
+    }
+
+    private func appendStreamingText(_ text: String, isThinking: Bool) {
+        // Reset if the stream type changed (e.g. thinking → agent_message).
+        if streamingIsThinking != isThinking && !streamingTextAccumulator.isEmpty {
+            applyStreamingFlush()
+        }
+        streamingTextAccumulator += text
+        streamingIsThinking = isThinking
+        scheduleStreamingFlush()
+    }
+
     private func finalizeStreamingBlocks() {
+        streamingFlushTask?.cancel()
+        streamingFlushTask = nil
+        applyStreamingFlush()
+        streamingTextAccumulator = ""
+        toolArgBuffers = [:]
+        toolOutputBuffers = [:]
         for index in blocks.indices {
             switch blocks[index].kind {
             case .assistantText(let text, true):
@@ -1103,6 +1161,7 @@ final class RookMacModel: ObservableObject {
         foregroundWindowTitle = title
         observeCurrentEnvironments(app: app, title: title)
     }
+
 
     /// In-app context change (e.g. switching browser pages or editor tabs) —
     /// refresh the bridge /context and update the in-memory environment cache.
@@ -1662,12 +1721,12 @@ final class RookMacModel: ObservableObject {
     }
 
     func decideEnvironment(_ decision: String) {
-        guard let offer = pendingOffer else {
+        guard let offer = pendingOffer, let session = currentSession else {
             return
         }
         Task {
             do {
-                try await api.decideEnvironment(environmentId: offer.environmentId, bundleHash: offer.bundleHash, decision: decision)
+                try await api.decideEnvironment(environmentId: offer.environmentId, bundleHash: offer.bundleHash, decision: decision, sessionId: session.id)
                 if decision == "accept" || decision == "approve" {
                     appendBlock(.system(text: "Bundle \(offer.bundleId) allowed for \(offer.environmentId)."))
                 }

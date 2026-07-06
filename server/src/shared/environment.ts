@@ -15,7 +15,13 @@ export interface EnvironmentPreview {
   bundles: EnvironmentBundlePreview[];
 }
 
-/** The 2×2 decision model: positive/negative × this-visit/permanent. */
+/**
+ * The 2×2 decision model:
+ * - "approve" = permanently approve (persists in SQLite, survives restarts)
+ * - "accept"  = approve for this session (in-memory, cleared on exit/expiry)
+ * - "ignore"  = reject for this session (in-memory, cleared on exit/expiry)
+ * - "reject"  = permanently reject (persists in SQLite, survives restarts)
+ */
 export type EnvironmentDecision = "accept" | "approve" | "ignore" | "reject";
 
 export const ENVIRONMENT_OFFER_AVAILABLE_KIND = "environment_offer_available";

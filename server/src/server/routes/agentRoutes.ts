@@ -55,14 +55,20 @@ export async function registerAgentRoutes(app: FastifyInstance, deps: {
 
     const sessionName = typeof request.body?.sessionName === "string" ? request.body.sessionName.trim() || "default" : undefined;
     const restartExisting = request.body?.restartExisting === true;
-    const room = await createOrReuseRoom({
-      agentId,
-      roomManager: deps.roomManager,
-      environmentManager: deps.environmentManager,
-      session,
-      sessionName,
-      restartExisting,
-    });
-    return { ok: true, agent: agentId, session: room.session };
+    try {
+      const room = await createOrReuseRoom({
+        agentId,
+        roomManager: deps.roomManager,
+        environmentManager: deps.environmentManager,
+        session,
+        sessionName,
+        restartExisting,
+      });
+      return { ok: true, agent: agentId, session: room.session };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      reply.code(400).send({ error: message });
+      return;
+    }
   });
 }

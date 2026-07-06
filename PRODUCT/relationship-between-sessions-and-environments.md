@@ -23,8 +23,9 @@ This means:
 
 The product doc previously considered per-session decisions to avoid cross-contamination (e.g., Lowe's skills leaking into a coding session). The resolution is:
 
-1. Sessions don't auto-enter environments — they only enter environments the user or agent explicitly joins.
-2. The agent can help decide whether to enter an environment based on the current session's context.
-3. The UI provides affordances to see and manage which environments are active for a session.
+1. Sessions don't auto-enter environments from mere availability — they only enter environments the user or agent explicitly joins.
+2. Entering a hierarchical child environment implicitly enters its active parent environments too (for example entering `app:md.obsidian/Rooknanigans` also enters `app:md.obsidian`).
+3. The agent can help decide whether to enter an environment based on the current session's context.
+4. The UI provides affordances to see and manage which environments are active for a session.
 
 If session-specific bundle gating is needed in the future, it would be a separate layer on top of the app-wide bundle decisions.

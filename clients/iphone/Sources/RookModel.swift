@@ -973,12 +973,12 @@ final class RookModel: ObservableObject {
     }
 
     func decideEnvironment(_ decision: String) {
-        guard let offer = pendingOffer else {
+        guard let offer = pendingOffer, let session = currentSession else {
             return
         }
         Task {
             do {
-                try await api.decideEnvironment(environmentId: offer.environmentId, bundleHash: offer.bundleHash, decision: decision)
+                try await api.decideEnvironment(environmentId: offer.environmentId, bundleHash: offer.bundleHash, decision: decision, sessionId: session.id)
                 if decision == "accept" || decision == "approve" {
                     appendBlock(.system(text: "Bundle \(offer.bundleId) allowed for \(offer.environmentId)."))
                 }

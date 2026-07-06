@@ -85,6 +85,19 @@ Use that package for the agent-side configuration itself, such as:
 - installed or custom skills
 - Pi package metadata/config
 
+Rook also injects one repo-local Pi skill into every Pi session automatically:
+- `../rook/skills/create-skills` — Anthropic's skill-authoring helper copied into this repo for environment-specific skill creation work
+
+Rook currently also injects one repo-local Pi development/debug extension into every Pi session automatically:
+- `../rook/dev-tools/prompt-trace-logger.ts` — logs provider payloads to `../rook/.var/pi-traces.jsonl` via `ROOK_PI_TRACE_LOG_PATH`
+
+This is intentionally always-on for now so we can inspect prompt construction while building the environment-aware prompt path. It should later be gated behind an explicit dev/prod mode distinction.
+
+When a session enters an environment, Rook also creates the user-local binding bundle skeleton for that environment under:
+- `~/.rook/environment-repository/<kind>/<path>/.bundles/default/skills/`
+
+Pi restarts for entered environments append startup instructions that point at those per-environment skill roots and list the currently entered environments plus their metadata. Entering a hierarchical environment (for example `app:md.obsidian/Rooknanigans`) also enters its active parent environments (for example `app:md.obsidian`) so broader app-level skills and instructions stay in scope.
+
 Use this repo for the launcher-side configuration, mainly through:
 - `~/.rook/config/agent-profiles.json` to choose which Pi package to launch and with which args
 

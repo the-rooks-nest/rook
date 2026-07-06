@@ -176,13 +176,14 @@ public struct RookAPI {
         return try JSONDecoder().decode(IdentifyResponse.self, from: data).candidates
     }
 
-    public func decideEnvironment(environmentId: String, bundleHash: String, decision: String) async throws {
+    public func decideEnvironment(environmentId: String, bundleHash: String, decision: String, sessionId: String) async throws {
         _ = try await postJSON(
             path: "api/environments/decision",
             payload: .object([
                 "environmentId": .string(environmentId),
                 "bundleHash": .string(bundleHash),
                 "decision": .string(decision),
+                "sessionId": .string(sessionId),
             ])
         )
     }
@@ -277,7 +278,10 @@ public struct RookAPI {
             return
         }
         let body = try? JSONDecoder().decode(JSONValue.self, from: data)
-        let message = body?["error"]?.stringValue ?? "Server error (\(http.statusCode))"
+        // Fastify 500s put the real message in "message", user-land errors in "error".
+        let message = body?["error"]?.stringValue
+            ?? body?["message"]?.stringValue
+            ?? "Server error (\(http.statusCode))"
         throw RookAPIError(message: message)
     }
 }

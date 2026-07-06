@@ -7,7 +7,7 @@ Product/design notes: `PRODUCT/`. When making PRs, make sure to reference anythi
 When making changes:
 - Keep tests in sync with code changes.
 - I will often ask about GitHub issues, pull requests, and related work. Typically use the GitHub CLI (`gh`) to access, inspect, and search for those things.
-- When we're working on an issue, it's usually a big enough chunk of work to create a git worktree in `../_worktrees/`. Name it after the issue and topic (for example, `issue-46-tabs`) and use that worktree for the implementation work.
+- When we're working on an issue, it's usually a big enough chunk of work to create a git worktree in `../_worktrees/`. Name it after the issue and topic (for example, `issue-46-tabs`) and use that worktree for the implementation work. After creating the worktree, copy `.env` from the main repo into it (`cp ../rook/.env ../_worktrees/issue-46-tabs/.env`) — it's gitignored so the worktree starts without it, and `run-rook.sh` needs it for remote phone/server config.
 - When you make obvious structural or workflow changes, update the relevant READMEs: root `README.md` and the README in whichever major package you touched (`server/`, `clients/mac/`, `clients/iphone/`, `clients/RookKit/`). Also update relevant docs in PRODUCT
 - Once you're complete with a large chunk of work, use the mac `say` command to tell me what you've done. Use no more than 7 words. You can background it (e.g. `say '…' &`) so it does not block the shell. Make sure to always end the `say` expression with a sentence-ending punctuation.
 
