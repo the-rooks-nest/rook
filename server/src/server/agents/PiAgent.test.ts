@@ -20,7 +20,7 @@ describe("PiAgent", () => {
     const options = agent as unknown as { options: { args: string[]; env: Record<string, string> } };
     expect(options.options.args.at(0)).toContain("pi-acp/dist/index.js");
     expect(options.options.env.PI_ACP_PI_COMMAND).toContain(".var/rook/generated/pi-launchers/");
-    expect(options.options.env.ROOK_PI_TRACE_LOG_PATH).toBe(path.join(REPO_ROOT, ".var", "pi-traces.jsonl"));
+    expect(options.options.env.ROOK_PI_TRACE_LOG_PATH).toBe("/tmp/pi-traces.jsonl");
 
     const launcher = readFileSync(options.options.env.PI_ACP_PI_COMMAND, "utf8");
     expect(launcher).toContain(JSON.stringify("pi"));

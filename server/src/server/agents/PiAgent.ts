@@ -84,7 +84,7 @@ function toBaseAgentOptions(options: PiAgentOptions, restartMetadata?: AgentRest
     args: [PI_ACP_ENTRYPOINT],
     env: {
       PI_ACP_PI_COMMAND: launcherPath,
-      ROOK_PI_TRACE_LOG_PATH: path.join(REPO_ROOT, ".var", "pi-traces.jsonl"),
+      ROOK_PI_TRACE_LOG_PATH: "/tmp/pi-traces.jsonl",
     },
     cwd,
     sessionCwd: typeof restartMetadata?.cwd === "string" ? restartMetadata.cwd : cwd,
