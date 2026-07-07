@@ -23,8 +23,8 @@ binding, and bearer-token auth, start with [docs/setup.md](../../docs/setup.md).
   radius). `LocationProvider` monitors each as a `CLCircularRegion`. Entering a
   region builds `loc:<slug>`, pre-checks the server for matching bundles
   (`GET /api/environments/preview`), and if any exist registers the environment
-  (`POST /api/environments/register`) with `latitude`/`longitude`/`regionId`
-  metadata. The server pushes a bundle offer over the session websocket; you
+  (`POST /api/environments/register`) with `slug`, `latitude`, `longitude`, and
+  `radiusMeters` metadata. The server pushes a bundle offer over the session websocket; you
   review the bundle name plus the names of any skills, MCP servers, and apps it
   contains, then decide with the same 2×2 choices as every other client.
   Leaving the region simply stops refreshing it from the phone; the server ages

@@ -160,7 +160,7 @@ The goal is not perfect purity yet; this is the direction to follow when adding 
 - `GET /api/agent/sessions?agent=<id>`: list saved sessions for an agent.
 - `GET /api/agent/session/recent`: fetch the most recent saved session record across agents.
 - `POST /api/agent/start`: start, reuse, or restart a session runtime.
-- `POST /api/environments/register { id, metadata?, canonicalSourceUrl?, sourceName? }`: mark an environment available. If `id` is hierarchical (for example `app:md.obsidian/Peeps` or `web:en.wikipedia.org/wiki/Main_Page`), the server also treats all parent prefixes as available.
+- `POST /api/environments/register { id, metadata?, canonicalSourceUrl?, sourceName? }`: mark an environment available. If `id` is hierarchical (for example `app:md.obsidian/Peeps` or `web:en.wikipedia.org/wiki/Main_Page`), the server also treats all parent prefixes as available. Server bootstrap wires in a small JSONL capture sink that ensures `IGNORED/environment_metadata_captures/` exists and appends each explicit registration there for later inspection.
 - `POST /api/environments/decision { environmentId, bundleHash, decision }`: record `accept | approve | ignore | reject` for an offered bundle.
 - `GET /api/environments/preview?environmentId=...`: return full bundle/file preview data for inspection tooling and future richer review UI.
 - `GET /api/diagnostics/environments`: return active/recent environment diagnostics including discovered bundles.
@@ -175,6 +175,7 @@ The goal is not perfect purity yet; this is the direction to follow when adding 
   - `EnvironmentEventStub.ts`, `types.ts`: room/runtime plumbing.
 - **Environment layer (`src/server/environment`)**:
   - `EnvironmentManager.ts`: global coordinator for environment availability and the 2×2 decision model; discovers bundles on registration and pushes bundle offer/resolve events into subscribed rooms.
+  - `environmentMetadataCapture.ts`: small pluggable registration-capture sink module; the default server wiring uses a JSONL sink under `IGNORED/environment_metadata_captures/`.
   - `EnvironmentRepositoryService.ts`: thin service wrapper around repository lookups; returns bundle-organized environment content and computes exact-content bundle hashes for decisions.
   - `types.ts`: `EnvironmentRecord`, `EnvironmentEventListener`, decision/helper types.
 - **Agent runtime layer (`src/server/agents`)**:
@@ -219,7 +220,7 @@ Transcript history is no longer Rookery-owned durable replay state; restored his
 
 The **`SessionRoom`** is the live coordinator for one session. It holds the current `BaseAgent` runtime, serialises event publication, and fans events out to WebSocket subscribers. Rooms are managed by **`SessionRoomManager`** (keyed by `sessionId`).
 
-The **`EnvironmentManager`** sits alongside the room manager. When a room is created it subscribes to the `EnvironmentManager`. External providers (for example the Chrome extension or macOS app) signal availability directly via `POST /api/environments/register`. The manager tracks global availability plus persistent/ephemeral decisions, asks `EnvironmentRepositoryService` for environment bundle content, then pushes offer / enter / exit / resolution events into subscribed rooms. `SessionRoom` is what turns those into client-visible state and runtime rebuilds.
+The **`EnvironmentManager`** sits alongside the room manager. When a room is created it subscribes to the `EnvironmentManager`. External providers (for example the Chrome extension or macOS app) signal availability directly via `POST /api/environments/register`. The manager tracks global availability plus persistent/ephemeral decisions, asks `EnvironmentRepositoryService` for environment bundle content, and can call an injected registration-capture sink. In the default server wiring that sink appends explicit registration metadata captures to `IGNORED/environment_metadata_captures/`. `SessionRoom` is what turns the resulting environment events into client-visible state and runtime rebuilds.
 
 **`POST /api/agent/start`** is the only way to create or modify a room (`createOrReuseRoom` in `index.ts`):
 

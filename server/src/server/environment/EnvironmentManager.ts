@@ -3,6 +3,10 @@ import type { EnvironmentDecisionStore } from "./EnvironmentDecisionStore.js";
 import type { EnvironmentPreview } from "../../shared/environment.js";
 import type { EnvironmentRepositoryService } from "./EnvironmentRepositoryService.js";
 import { ensurePersonalEnvironmentBinding } from "./EnvironmentBinding.js";
+import {
+  NoopEnvironmentRegistrationCaptureSink,
+  type EnvironmentRegistrationCaptureSink,
+} from "./environmentMetadataCapture.js";
 import { renderEnvironmentPrompt } from "./EnvironmentPromptTemplate.js";
 import { renderRookIdentityPrompt } from "./RookIdentityPrompt.js";
 import { SessionDecisionRegistry } from "./SessionDecisionRegistry.js";
@@ -58,6 +62,7 @@ export interface EnvironmentManagerOptions {
   recentEnvironmentRetentionMs?: number;
   logger?: { info: (...args: any[]) => void };
   now?: () => number;
+  registrationCaptureSink?: EnvironmentRegistrationCaptureSink;
 }
 
 /**
@@ -103,6 +108,7 @@ export class EnvironmentManager {
   private readonly logger: { info: (...args: any[]) => void };
   private readonly now: () => number;
   private readonly expiryTimer: ReturnType<typeof setInterval>;
+  private readonly registrationCaptureSink: EnvironmentRegistrationCaptureSink;
 
   constructor(
     private readonly repositoryService: EnvironmentRepositoryService,
@@ -114,6 +120,7 @@ export class EnvironmentManager {
     this.recentEnvironmentRetentionMs = options.recentEnvironmentRetentionMs ?? 30 * 60_000;
     this.logger = options.logger ?? console;
     this.now = options.now ?? Date.now;
+    this.registrationCaptureSink = options.registrationCaptureSink ?? new NoopEnvironmentRegistrationCaptureSink();
     this.expiryTimer = setInterval(() => this.pruneMemory(), Math.min(this.activeEnvironmentWindowMs, 60_000));
     this.expiryTimer.unref?.();
   }
@@ -124,6 +131,17 @@ export class EnvironmentManager {
     const now = this.now();
     const nowIso = new Date(now).toISOString();
     const existing = this.remembered.get(env.id);
+    try {
+      await this.registrationCaptureSink.capture({
+        capturedAt: nowIso,
+        environmentId: env.id,
+        sourceName: info.sourceName,
+        canonicalSourceUrl: info.canonicalSourceUrl,
+        metadata: env.metadata,
+      });
+    } catch (error) {
+      this.logger.info({ environmentId: env.id, error }, "failed to append environment metadata capture");
+    }
     const registeredAt = existing?.status === "active" ? (existing.registeredAt ?? nowIso) : nowIso;
     const activeUntil = new Date(now + this.activeEnvironmentWindowMs).toISOString();
     const resolvedBundles = await this.repositoryService.getResolvedBundles(env.id);

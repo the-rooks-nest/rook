@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EnvironmentManager } from "./EnvironmentManager.js";
 import { EnvironmentDecisionStore } from "./EnvironmentDecisionStore.js";
 import type { EnvironmentRepositoryService } from "./EnvironmentRepositoryService.js";
+import { JsonlEnvironmentMetadataCaptureSink } from "./environmentMetadataCapture.js";
 import type { EnvironmentEventListener } from "./types.js";
 
 function mockRepositoryService(): EnvironmentRepositoryService {
@@ -31,6 +32,7 @@ describe("EnvironmentManager", () => {
   let nowMs: number;
   let originalHome: string | undefined;
   let tempHome: string;
+  let captureDir: string;
 
   beforeEach(() => {
     decisions = new EnvironmentDecisionStore(":memory:");
@@ -38,6 +40,7 @@ describe("EnvironmentManager", () => {
     originalHome = process.env.HOME;
     tempHome = mkdtempSync(path.join(os.tmpdir(), "rook-home-"));
     process.env.HOME = tempHome;
+    captureDir = path.join(tempHome, "IGNORED", "environment_metadata_captures");
   });
 
   afterEach(() => {
@@ -47,12 +50,17 @@ describe("EnvironmentManager", () => {
     rmSync(tempHome, { recursive: true, force: true });
   });
 
+  function captureSink() {
+    return new JsonlEnvironmentMetadataCaptureSink(captureDir);
+  }
+
   function newManager(activeWindowMs = 6 * 60_000, recentRetentionMs = 30 * 60_000): EnvironmentManager {
     return new EnvironmentManager(mockRepositoryService(), decisions, {
       activeEnvironmentWindowMs: activeWindowMs,
       recentEnvironmentRetentionMs: recentRetentionMs,
       logger: { info: vi.fn() },
       now: () => nowMs,
+      registrationCaptureSink: captureSink(),
     });
   }
 
@@ -62,6 +70,40 @@ describe("EnvironmentManager", () => {
     await manager.registerAvailableEnvironment({ id: "web:example.com", metadata: {} }, { sourceName: "Example" });
 
     expect(manager.isAvailable("web:example.com")).toBe(true);
+  });
+
+  it("creates IGNORED/environment_metadata_captures and appends environment metadata captures as jsonl", async () => {
+    const manager = newManager();
+
+    await manager.registerAvailableEnvironment(
+      { id: "web:example.com/docs", metadata: { title: "Docs", tags: ["api"] } },
+      { sourceName: "Example Docs", canonicalSourceUrl: "https://example.com/docs" },
+    );
+    await manager.registerAvailableEnvironment(
+      { id: "web:example.com/docs", metadata: { title: "Docs 2" } },
+      { sourceName: "Example Docs" },
+    );
+
+    const filePath = path.join(captureDir, "web-example.com--docs.jsonl");
+    expect(existsSync(path.join(tempHome, "IGNORED"))).toBe(true);
+    expect(existsSync(captureDir)).toBe(true);
+    expect(existsSync(filePath)).toBe(true);
+
+    const lines = readFileSync(filePath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatchObject({
+      capturedAt: "2026-07-02T12:00:00.000Z",
+      environmentId: "web:example.com/docs",
+      sourceName: "Example Docs",
+      canonicalSourceUrl: "https://example.com/docs",
+      metadata: { title: "Docs", tags: ["api"] },
+    });
+    expect(lines[1]).toMatchObject({
+      capturedAt: "2026-07-02T12:00:00.000Z",
+      environmentId: "web:example.com/docs",
+      sourceName: "Example Docs",
+      metadata: { title: "Docs 2" },
+    });
   });
 
   it("moves an active environment to recent after the active window", async () => {

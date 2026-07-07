@@ -360,6 +360,7 @@ final class RookModel: ObservableObject {
                 "slug": .string(place.id),
                 "latitude": .number(place.latitude),
                 "longitude": .number(place.longitude),
+                "radiusMeters": .number(place.radius),
             ]
             try? await api.registerEnvironment(id: envId, sourceName: place.name, metadata: metadata)
         }
@@ -374,6 +375,7 @@ final class RookModel: ObservableObject {
                 "slug": .string(place.id),
                 "latitude": .number(place.latitude),
                 "longitude": .number(place.longitude),
+                "radiusMeters": .number(place.radius),
             ]
             try? await api.registerEnvironment(id: envId, sourceName: place.name, metadata: metadata)
         }

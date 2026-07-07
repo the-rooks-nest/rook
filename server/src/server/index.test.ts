@@ -594,7 +594,10 @@ describe("server", () => {
           registeredAt: expect.any(String),
           lastTouchedAt: expect.any(String),
           activeUntil: expect.any(String),
-          effectiveDecision: "accept",
+          effectiveDecision: "undecided",
+          bundles: expect.any(Array),
+          bundleIds: expect.any(Array),
+          bundleCollectionPaths: expect.any(Array),
         }),
       ],
       counts: {

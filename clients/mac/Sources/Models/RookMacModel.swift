@@ -1090,6 +1090,51 @@ final class RookMacModel: ObservableObject {
         return ids
     }
 
+    private static func environmentCandidates(
+        bundleId: String,
+        appName: String,
+        windowTitle: String? = nil,
+        rawURL: String? = nil
+    ) -> [EnvironmentCandidate] {
+        var candidates: [EnvironmentCandidate] = []
+
+        var appMetadata: [String: JSONValue] = [
+            "bundleId": .string(bundleId),
+            "appName": .string(appName),
+        ]
+        if let windowTitle, !windowTitle.isEmpty {
+            appMetadata["windowTitle"] = .string(windowTitle)
+        }
+
+        if let windowTitle,
+           let vault = Self.obsidianVaultName(from: windowTitle) {
+            var vaultMetadata = appMetadata
+            vaultMetadata["vaultName"] = .string(vault)
+            candidates.append(EnvironmentCandidate(
+                id: "app:\(bundleId)/\(Self.encodeEnvironmentPathComponent(vault))",
+                sourceName: "\(appName) · \(vault)",
+                metadata: vaultMetadata
+            ))
+        }
+        candidates.append(EnvironmentCandidate(
+            id: "app:\(bundleId)",
+            sourceName: appName,
+            metadata: appMetadata
+        ))
+
+        if Self.browserBundleIds.contains(bundleId),
+           let rawURL {
+            candidates.append(contentsOf: Self.webEnvironmentCandidates(
+                rawURL: rawURL,
+                bundleId: bundleId,
+                appName: appName,
+                windowTitle: windowTitle
+            ))
+        }
+
+        return candidates.sorted { Self.environmentDepth($0.id) < Self.environmentDepth($1.id) }
+    }
+
     /// Produces hierarchical web environment candidates for a browser URL.
     /// Returns one candidate per path segment depth (e.g. `web:x.com` and `web:x.com/home`).
     private static func webEnvironmentCandidates(
@@ -1192,45 +1237,15 @@ final class RookMacModel: ObservableObject {
     }
 
     private func deriveForegroundEnvironmentCandidates(app: ForegroundApp, title: String?) -> [EnvironmentCandidate] {
-        var candidates: [EnvironmentCandidate] = []
-
-        var appMetadata: [String: JSONValue] = [
-            "bundleId": .string(app.bundleId),
-            "appName": .string(app.name),
-        ]
-        if let title, !title.isEmpty {
-            appMetadata["windowTitle"] = .string(title)
-        }
-
-        // Always register the base app environment; additionally register a
-        // vault-scoped child when the window title contains an Obsidian vault name.
-        if let title,
-           let vault = Self.obsidianVaultName(from: title) {
-            var vaultMetadata = appMetadata
-            vaultMetadata["vaultName"] = .string(vault)
-            candidates.append(EnvironmentCandidate(
-                id: "app:\(app.bundleId)/\(Self.encodeEnvironmentPathComponent(vault))",
-                sourceName: "\(app.name) · \(vault)",
-                metadata: vaultMetadata
-            ))
-        }
-        candidates.append(EnvironmentCandidate(
-            id: "app:\(app.bundleId)",
-            sourceName: app.name,
-            metadata: appMetadata
-        ))
-
-        if Self.browserBundleIds.contains(app.bundleId),
-           let rawURL = AXReader.activeTabURL(pid: app.pid) {
-            candidates.append(contentsOf: Self.webEnvironmentCandidates(
-                rawURL: rawURL,
-                bundleId: app.bundleId,
-                appName: app.name,
-                windowTitle: title
-            ))
-        }
-
-        return candidates.sorted { Self.environmentDepth($0.id) < Self.environmentDepth($1.id) }
+        let rawURL = Self.browserBundleIds.contains(app.bundleId)
+            ? AXReader.activeTabURL(pid: app.pid)
+            : nil
+        return Self.environmentCandidates(
+            bundleId: app.bundleId,
+            appName: app.name,
+            windowTitle: title,
+            rawURL: rawURL
+        )
     }
 
     private func encounterEnvironmentCandidates(_ candidates: [EnvironmentCandidate], reason: String) {
@@ -1350,25 +1365,17 @@ final class RookMacModel: ObservableObject {
                 continue
             }
 
-            let appCandidate = EnvironmentCandidate(
-                id: "app:\(bundleId)",
-                sourceName: name,
-                metadata: [
-                    "bundleId": .string(bundleId),
-                    "appName": .string(name),
-                ]
-            )
-            byId[appCandidate.id] = appCandidate
-
-            if Self.browserBundleIds.contains(bundleId),
-               let rawURL = AXReader.activeTabURL(pid: app.processIdentifier) {
-                for candidate in Self.webEnvironmentCandidates(
-                    rawURL: rawURL,
-                    bundleId: bundleId,
-                    appName: name
-                ) {
-                    byId[candidate.id] = candidate
-                }
+            let title = AXReader.focusedWindowTitle(pid: app.processIdentifier)
+            let rawURL = Self.browserBundleIds.contains(bundleId)
+                ? AXReader.activeTabURL(pid: app.processIdentifier)
+                : nil
+            for candidate in Self.environmentCandidates(
+                bundleId: bundleId,
+                appName: name,
+                windowTitle: title,
+                rawURL: rawURL
+            ) {
+                byId[candidate.id] = candidate
             }
         }
         return byId.values.sorted { Self.environmentDepth($0.id) < Self.environmentDepth($1.id) }

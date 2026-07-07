@@ -10,6 +10,7 @@ import { CompositeEnvironmentRepository } from "./environment/CompositeEnvironme
 import { DirectoryEnvironmentRepository } from "./environment/DirectoryEnvironmentRepository.js";
 import { LocationContextRepository } from "./environment/LocationContextRepository.js";
 import { EnvironmentRepositoryService } from "./environment/EnvironmentRepositoryService.js";
+import { JsonlEnvironmentMetadataCaptureSink } from "./environment/environmentMetadataCapture.js";
 import { EnvironmentIdentifier } from "./location/EnvironmentIdentifier.js";
 import { MockBuildingSkillSuggester } from "./location/BuildingSkillSuggester.js";
 import { PtilesPoiLookupProvider } from "./location/PtilesPoiLookupProvider.js";
@@ -72,10 +73,13 @@ export async function buildServer(options: BuildServerOptions = {}) {
   ]);
   const environmentRepositoryService = new EnvironmentRepositoryService(environmentRepository);
   const environmentDecisionStore = new EnvironmentDecisionStore(options.environmentDecisionStoreLocation);
+  const environmentMetadataCaptureSink = new JsonlEnvironmentMetadataCaptureSink();
+  await environmentMetadataCaptureSink.initialize();
   const environmentManager = new EnvironmentManager(environmentRepositoryService, environmentDecisionStore, {
     activeEnvironmentWindowMs: options.environmentActiveWindowMs ?? Number(process.env.ROOK_ENVIRONMENT_ACTIVE_WINDOW_MS ?? 5 * 60_000 + 15_000),
     recentEnvironmentRetentionMs: options.environmentRecentRetentionMs ?? Number(process.env.ROOK_ENVIRONMENT_RECENT_RETENTION_MS ?? 30 * 60_000),
     logger: app.log,
+    registrationCaptureSink: environmentMetadataCaptureSink,
   });
   // Ptiles is an internal geo-identification detail: fetch byte ranges directly from
   // the upstream host (single egress, allowlisted file names) — no public route.

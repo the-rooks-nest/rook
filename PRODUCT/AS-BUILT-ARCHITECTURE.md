@@ -1,6 +1,6 @@
 # Rookery - As-Built Architecture
 
-**Last Updated**: 2026-06-16
+**Last Updated**: 2026-07-07
 
 This document is the short, current architecture description for the repo as it exists today. It intentionally avoids historical detail and low-level implementation notes.
 
@@ -13,7 +13,6 @@ Rookery is a local-first monorepo centered on one service at `127.0.0.1:3000`:
 - when configured, bearer auth is required for all client access, including localhost
 
 - a **Fastify server**
-- a **React Native web chat UI**
 - a **WebSocket ACP bridge** to agent runtimes
 - an **environment manager** that can hot-load environment-linked skills into a session
 
@@ -23,8 +22,6 @@ The repo is organized into focused top-level packages: `server/` and a `clients/
 
 ```text
 Host clients / providers                         registers environment kind
-  ├─ Browser at :3000
-  ├─ Chrome extension                            web:<slug>
   ├─ Obsidian plugin
   ├─ macOS menu bar app (native Swift)           app:<slug>, web:<slug>   (foreground encounters, plus close detection)
   └─ iPhone app (native Swift)                   loc:<slug> (GPS geofence)
@@ -218,6 +215,7 @@ Storage model:
 - discovered bundles and their exact-content hashes live alongside each remembered environment in memory
 - ephemeral decisions (`accept`, `ignore`) live in memory
 - persistent decisions (`approve`, `reject`) live in SQLite keyed by bundle-content hash
+- optional registration-capture sinks can be wired in at server bootstrap; the current default sink creates `IGNORED/environment_metadata_captures/` and appends JSONL registration records there
 
 ### 6.4 How environments affect sessions
 
@@ -274,9 +272,10 @@ The client is structured around:
 
 Current ecosystem around `:3000`:
 
-- **Chrome extension**: detects supported web contexts and registers `web:<slug>` environments
+- there is no current in-repo browser chat client hosted by the server; `buildServer({ enableClient })` keeps `enableClient` only as a legacy no-op
+- there is no current in-repo Chrome extension package
 - **Obsidian plugin**: embeds the app in a sidebar view
-- **macOS menu bar app**: native SwiftUI client with the same backend; registers newly seen user-visible app/page encounters, re-registers them every 5 minutes while still in its local TTL cache, and otherwise lets the server age them out
+- **macOS menu bar app**: native SwiftUI client with the same backend; registers newly seen user-visible app/page encounters, including `web:<slug>` environments from the active browser, re-registers them every 5 minutes while still in its local TTL cache, and otherwise lets the server age them out
 - **iPhone app**: native SwiftUI client that registers `loc:<slug>` environments from GPS geofences, making the agent location-aware (skills load as you arrive at a defined place). It also drives ptiles-based business discovery on arrival, registering `loc:<domain>/…` environments — see [`location-environment-awareness.md`](./location-environment-awareness.md). Adds Live Activity / Dynamic Island presence and on-device voice.
 
 The two native Swift clients share one cross-platform layer — models, the REST/ACP-WebSocket clients, the design system and chat-block views, voice, and Live Activity attributes — through the `clients/RookKit` Swift package, so they stay protocol- and design-consistent with a single source of truth.

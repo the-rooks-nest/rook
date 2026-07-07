@@ -832,6 +832,7 @@ class RookViewModel(
                 put("slug", place.id)
                 put("latitude", place.latitude)
                 put("longitude", place.longitude)
+                put("radiusMeters", place.radius)
             }
             runCatching { api.registerEnvironment(envId, place.name, metadata) }
         }
@@ -846,6 +847,7 @@ class RookViewModel(
                 put("slug", place.id)
                 put("latitude", place.latitude)
                 put("longitude", place.longitude)
+                put("radiusMeters", place.radius)
             }
             runCatching { api.registerEnvironment(envId, place.name, metadata) }
         }
