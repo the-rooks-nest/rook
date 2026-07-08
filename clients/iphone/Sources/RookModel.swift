@@ -105,7 +105,7 @@ final class RookModel: ObservableObject {
         } else if let stored, !stored.isEmpty {
             urlString = stored
         } else {
-            urlString = "http://127.0.0.1:3000"
+            urlString = "http://127.0.0.1:7665"
         }
         let envToken = ProcessInfo.processInfo.environment["ROOK_AUTH_TOKEN"]?.trimmingCharacters(in: .whitespacesAndNewlines)
         let legacyStoredToken = UserDefaults.standard.string(forKey: "RookAuthToken")?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -116,7 +116,7 @@ final class RookModel: ObservableObject {
             KeychainStore.setString(tokenToPersist, for: "RookAuthToken")
             UserDefaults.standard.removeObject(forKey: "RookAuthToken")
         }
-        let finalURL = URL(string: urlString) ?? URL(string: "http://127.0.0.1:3000")!
+        let finalURL = URL(string: urlString) ?? URL(string: "http://127.0.0.1:7665")!
         baseURLString = urlString
         authTokenString = authToken
         api = RookAPI(

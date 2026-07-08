@@ -169,7 +169,7 @@ final class RookMacModel: ObservableObject {
         )
         let envBaseURL = ProcessInfo.processInfo.environment["ROOK_SERVER_BASE_URL"]?.trimmingCharacters(in: .whitespacesAndNewlines)
         let storedBaseURL = UserDefaults.standard.string(forKey: "RookServerBaseURL")?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedBaseURL = (envBaseURL?.isEmpty == false ? envBaseURL : storedBaseURL) ?? "http://127.0.0.1:3000"
+        let resolvedBaseURL = (envBaseURL?.isEmpty == false ? envBaseURL : storedBaseURL) ?? "http://127.0.0.1:7665"
         if let envBaseURL, !envBaseURL.isEmpty, storedBaseURL != envBaseURL {
             UserDefaults.standard.set(envBaseURL, forKey: "RookServerBaseURL")
         }
@@ -183,7 +183,7 @@ final class RookMacModel: ObservableObject {
 
         baseURLString = resolvedBaseURL
         authTokenString = resolvedToken
-        api = RookAPI(baseURL: URL(string: resolvedBaseURL) ?? URL(string: "http://127.0.0.1:3000")!, authToken: resolvedToken)
+        api = RookAPI(baseURL: URL(string: resolvedBaseURL) ?? URL(string: "http://127.0.0.1:7665")!, authToken: resolvedToken)
         RookMacModel.shared = self
         socket.onEvent = { [weak self] event in
             self?.handleSocketEvent(event)

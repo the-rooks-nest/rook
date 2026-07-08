@@ -29,7 +29,7 @@ async function currentContextName(): Promise<string | null> {
 
 async function main(): Promise<void> {
   const gpxPath = process.argv[2];
-  const baseUrl = process.argv[3] ?? "http://127.0.0.1:3000";
+  const baseUrl = process.argv[3] ?? "http://127.0.0.1:7665";
   const stride = Math.max(1, Number(process.argv[4] ?? 1) || 1);
   if (!gpxPath) {
     console.error("usage: npm run replay:gpx -- <file.gpx> [baseUrl] [stride]");

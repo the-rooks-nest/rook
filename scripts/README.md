@@ -83,7 +83,7 @@ Hits `GET /api/diagnostics/environments` on the running server and pretty-prints
 
 ```bash
 ./scripts/print-environments.sh
-./scripts/print-environments.sh --url http://127.0.0.1:3000 --token "$ROOK_AUTH_TOKEN" --raw
+./scripts/print-environments.sh --url http://127.0.0.1:7665 --token "$ROOK_AUTH_TOKEN" --raw
 ```
 
 ### `dump-environment-decisions.sh` — dump the environment-decisions SQLite database

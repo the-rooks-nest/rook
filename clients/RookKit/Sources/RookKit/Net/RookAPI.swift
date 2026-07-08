@@ -22,7 +22,7 @@ public struct RookAPI {
     public let baseURL: URL
     public let authToken: String?
 
-    public init(baseURL: URL = URL(string: "http://127.0.0.1:3000")!, authToken: String? = nil) {
+    public init(baseURL: URL = URL(string: "http://127.0.0.1:7665")!, authToken: String? = nil) {
         self.baseURL = baseURL
         let trimmed = authToken?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.authToken = (trimmed?.isEmpty == false) ? trimmed : nil

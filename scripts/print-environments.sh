@@ -10,7 +10,7 @@ if [[ -f "$REPO_ROOT/.env" ]]; then
   set +a
 fi
 
-SERVER_URL="${ROOK_SERVER_BASE_URL:-http://127.0.0.1:${ROOK_SERVER_PORT:-3000}}"
+SERVER_URL="${ROOK_SERVER_BASE_URL:-http://127.0.0.1:${ROOK_SERVER_PORT:-7665}}"
 AUTH_TOKEN="${ROOK_AUTH_TOKEN:-}"
 ENDPOINT_PATH="/api/diagnostics/environments"
 
@@ -22,7 +22,7 @@ Usage:
 Examples:
   ./scripts/print-environments.sh
   ./scripts/print-environments.sh --token "\$ROOK_AUTH_TOKEN"
-  ./scripts/print-environments.sh --url http://127.0.0.1:3000 --raw
+  ./scripts/print-environments.sh --url http://127.0.0.1:7665 --raw
 
 Auth:
   - if .env exists, ROOK_AUTH_TOKEN is loaded automatically

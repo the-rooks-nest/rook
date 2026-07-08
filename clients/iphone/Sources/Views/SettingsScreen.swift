@@ -55,7 +55,7 @@ struct SettingsScreen: View {
                 StatusDot(tint: model.serverStatusTint)
             }
 
-            TextField("http://127.0.0.1:3000", text: $serverDraft)
+            TextField("http://127.0.0.1:7665", text: $serverDraft)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(.URL)

@@ -13,7 +13,7 @@ RUN_ROOT="$REPO_ROOT/.var/run-rook"
 BUILD_ROOT="$RUN_ROOT/build"
 SERVER_LOG="$RUN_ROOT/server.log"
 SERVER_PIDFILE="$RUN_ROOT/server.pid"
-SERVER_PORT="${ROOK_SERVER_PORT:-3000}"
+SERVER_PORT="${ROOK_SERVER_PORT:-7665}"
 SERVER_BIND_HOST="127.0.0.1"
 SERVER_HEALTH_URL="http://${SERVER_BIND_HOST}:${SERVER_PORT}/api/health"
 SERVER_AUTH_TOKEN="${ROOK_AUTH_TOKEN:-}"
@@ -42,7 +42,7 @@ What it does:
 Notes:
   - you can pass multiple targets; they run in the order given
   - mac uses localhost by default
-  - sim uses http://127.0.0.1:3000 by default; pass --server-url to override
+  - sim uses http://127.0.0.1:7665 by default; pass --server-url to override
   - ios/phone uses ROOK_REMOTE_HOSTNAME, ROOK_BIND_IP, or a non-localhost
     ROOK_SERVER_HOST by default; pass --server-url to override
   - android uses `adb reverse` so the app's built-in 127.0.0.1 default reaches

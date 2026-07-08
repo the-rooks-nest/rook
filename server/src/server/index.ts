@@ -30,7 +30,7 @@ dotenv.config({ path: path.join(REPO_ROOT, ".env") });
 
 const loopbackHost = "127.0.0.1";
 const remoteBindIp = process.env.ROOK_BIND_IP ?? process.env.ROOK_TAILSCALE_IP;
-const port = Number(process.env.PORT ?? 3000);
+const port = Number(process.env.PORT ?? 7665);
 
 export interface BuildServerOptions {
   enableClient?: boolean; // legacy no-op; the server no longer hosts a web client
