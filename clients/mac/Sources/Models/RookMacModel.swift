@@ -838,8 +838,12 @@ final class RookMacModel: ObservableObject {
                 appendStreamingText(text, isThinking: true)
             }
         case .toolCallStarted(let toolCallId, let title, let kind, let status, let rawInput):
-            if isReplaying { replayFlushIncompatibleSection("tool") }
-            else { statusLine = "Using tool: \(title)" }
+            if isReplaying {
+                replayFlushIncompatibleSection("tool")
+            } else {
+                flushLiveIncompatibleSection()
+                statusLine = "Using tool: \(title)"
+            }
             let state = ToolBlockState(
                 toolCallId: toolCallId,
                 title: title,
@@ -850,31 +854,35 @@ final class RookMacModel: ObservableObject {
             )
             appendBlock(.tool(state), id: "tool-\(toolCallId)-\(blockCounter)")
         case .toolCallUpdate(let toolCallId, let status, let toolName, let output):
-            if isReplaying { replayFlushIncompatibleSection("tool") }
+            if isReplaying {
+                replayFlushIncompatibleSection("tool")
+            } else {
+                flushLiveIncompatibleSection()
+            }
             updateTool(toolCallId) { tool in
                 if let toolName, tool.title.isEmpty {
                     tool.title = toolName
                 }
                 switch status {
                 case "pending":
-                    tool.status = .pending
+                    advanceToolStatus(&tool, to: .pending)
                 case "in_progress":
-                    tool.status = .running
+                    advanceToolStatus(&tool, to: .running)
                     if let output {
                         tool.output = output
                     }
                 case "completed":
-                    tool.status = .completed
+                    advanceToolStatus(&tool, to: .completed)
                     if let output {
                         tool.output = output
                     }
                 case "failed":
-                    tool.status = .failed
+                    advanceToolStatus(&tool, to: .failed)
                     if let output {
                         tool.output = output
                     }
                 case "cancelled":
-                    tool.status = .cancelled
+                    advanceToolStatus(&tool, to: .cancelled)
                 default:
                     break
                 }
@@ -888,10 +896,15 @@ final class RookMacModel: ObservableObject {
             toolArgBuffers[toolCallId, default: ""] += delta
             scheduleStreamingFlush()
         case .toolCallReady(let toolCallId, _):
-            if isReplaying { updateTool(toolCallId) { $0.status = .ready }; return }
-            applyStreamingFlush()
+            if isReplaying {
+                updateTool(toolCallId) { tool in
+                    advanceToolStatus(&tool, to: .ready)
+                }
+                return
+            }
+            flushLiveIncompatibleSection()
             updateTool(toolCallId) { tool in
-                tool.status = .ready
+                advanceToolStatus(&tool, to: .ready)
             }
         case .toolOutputSnapshot(let toolCallId, _, let text):
             if isReplaying { updateTool(toolCallId) { $0.output = text }; return }
@@ -1027,6 +1040,12 @@ final class RookMacModel: ObservableObject {
         }
     }
 
+    private func flushLiveIncompatibleSection() {
+        streamingFlushTask?.cancel()
+        streamingFlushTask = nil
+        applyStreamingFlush()
+    }
+
     private func applyStreamingFlush() {
         // Text (thinking / agent message)
         if !streamingTextAccumulator.isEmpty {
@@ -1058,7 +1077,7 @@ final class RookMacModel: ObservableObject {
             toolArgBuffers = [:]
             for (toolCallId, text) in snap {
                 updateTool(toolCallId) { tool in
-                    tool.status = .inputStreaming
+                    advanceToolStatus(&tool, to: .inputStreaming)
                     tool.arguments = text
                 }
             }
@@ -1068,7 +1087,7 @@ final class RookMacModel: ObservableObject {
             toolOutputBuffers = [:]
             for (toolCallId, text) in snap {
                 updateTool(toolCallId) { tool in
-                    tool.status = .running
+                    advanceToolStatus(&tool, to: .running)
                     tool.output = text
                 }
             }
@@ -1086,9 +1105,7 @@ final class RookMacModel: ObservableObject {
     }
 
     private func finalizeStreamingBlocks() {
-        streamingFlushTask?.cancel()
-        streamingFlushTask = nil
-        applyStreamingFlush()
+        flushLiveIncompatibleSection()
         streamingTextAccumulator = ""
         toolArgBuffers = [:]
         toolOutputBuffers = [:]
@@ -1101,6 +1118,28 @@ final class RookMacModel: ObservableObject {
             default:
                 break
             }
+        }
+    }
+
+    private func toolStatusRank(_ status: ToolBlockStatus) -> Int {
+        switch status {
+        case .pending:
+            return 0
+        case .inputStreaming:
+            return 1
+        case .ready:
+            return 2
+        case .running:
+            return 3
+        case .completed, .failed, .cancelled:
+            return 4
+        }
+    }
+
+    private func advanceToolStatus(_ tool: inout ToolBlockState, to next: ToolBlockStatus) {
+        guard !tool.status.isTerminal else { return }
+        if next.isTerminal || toolStatusRank(next) >= toolStatusRank(tool.status) {
+            tool.status = next
         }
     }
 
