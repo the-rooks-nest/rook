@@ -73,7 +73,7 @@ Examples:
 - `web:example.com`
 - `web:example.com/stuff`
 - `location:office`
-- `project:the-rooks-nest/rook`
+- `project:rookkeeper/rook`
 
 ## Filesystem shape
 
@@ -96,7 +96,7 @@ Examples:
 - `mac:md.obsidian` → `mac/md.obsidian/`
 - `mac:md.obsidian/reading_vault` → `mac/md.obsidian/reading_vault/`
 - `location:office` → `location/office/`
-- `project:the-rooks-nest/rook` → `project/the-rooks-nest/rook/`
+- `project:rookkeeper/rook` → `project/rookkeeper/rook/`
 - `web:example.com` → `web/example.com/`
 
 ## Bundles

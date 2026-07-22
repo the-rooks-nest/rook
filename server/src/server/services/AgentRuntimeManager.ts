@@ -262,7 +262,7 @@ export class AgentRuntimeManager {
 
   private publishEnvironmentOfferResolution(sessionId: string, environmentId: string, bundleId: string, bundleHash: string, resolution: EnvironmentResolution): void {
     this.unresolvedOffers.get(sessionId)?.delete(bundleHash);
-    const message: JsonRpcMessage = { jsonrpc: "2.0", method: "_com.the-rooks-nest/environment_offer_resolved", params: { sessionId, environmentId, bundleId, bundleHash, resolution } };
+    const message: JsonRpcMessage = { jsonrpc: "2.0", method: "_com.rookkeeper/environment_offer_resolved", params: { sessionId, environmentId, bundleId, bundleHash, resolution } };
     for (const [listener, capabilities] of this.subscribers.get(sessionId) ?? []) {
       if (capabilities.environmentOffers) listener(message);
     }
@@ -343,7 +343,7 @@ function originalRuntimeRequestId(publicId: string): string | number {
 }
 
 function environmentOfferMessage(sessionId: string, offer: EnvironmentBundleOffer): JsonRpcMessage {
-  return { jsonrpc: "2.0", method: "_com.the-rooks-nest/environment_offer", params: { sessionId, ...offer } };
+  return { jsonrpc: "2.0", method: "_com.rookkeeper/environment_offer", params: { sessionId, ...offer } };
 }
 
 function rewriteMessageSessionId(message: JsonRpcMessage, sessionId: string): JsonRpcMessage {

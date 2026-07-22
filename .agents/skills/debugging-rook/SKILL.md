@@ -149,7 +149,7 @@ The mac client's sessions list does **not** auto-refresh. Restart to see new ses
 Then use Codex — **always specify the full app path** (multiple builds share the same bundle ID):
 
 ```bash
-codex exec "Use computer use. Interact with the Rook app at /Users/johnberryman/projects/github/the-rooks-nest/rook/.var/run-rook/build/Rook/Build/Products/Debug/Rook.app. [instruction]" 2>/dev/null
+codex exec "Use computer use. Interact with the Rook app at /Users/johnberryman/projects/github/rookkeeper/rook/.var/run-rook/build/Rook/Build/Products/Debug/Rook.app. [instruction]" 2>/dev/null
 ```
 
 Examples:

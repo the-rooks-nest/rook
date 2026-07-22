@@ -4,7 +4,7 @@ The Rook agent is isolated from environment internals for security. It learns wh
 
 ## Environment
 
-Core object. It has a URL-like identifier: `<kind>:<unique-path>` (e.g. `web:en.wikipedia.org/wiki/Julius_Caesar`, `mac:md.obsidian/MyVault/Projects/Foo`, `location:lowes.com/store-1234`, `project:the-rooks-nest/rook`). And is associated w/ metadata (display name, provenance, other fields TBD). An environment has an arbitrary state which changes over time that we will _somehow_ communicate to the Rook agent (Also TBD). And an environment is associated with Skills that allow the agent to interact with it and draw information from it.
+Core object. It has a URL-like identifier: `<kind>:<unique-path>` (e.g. `web:en.wikipedia.org/wiki/Julius_Caesar`, `mac:md.obsidian/MyVault/Projects/Foo`, `location:lowes.com/store-1234`, `project:rookkeeper/rook`). And is associated w/ metadata (display name, provenance, other fields TBD). An environment has an arbitrary state which changes over time that we will _somehow_ communicate to the Rook agent (Also TBD). And an environment is associated with Skills that allow the agent to interact with it and draw information from it.
 
 Current top-level environment kinds are:
 - `location`
@@ -17,7 +17,7 @@ Current top-level environment kinds are:
 
 IDs are hierarchical; narrower IDs may imply broader ones (`web:reddit.com/r/foo` ⊂ `web:reddit.com`). Multiple overlapping envs can be active at once. Skills and state can be associated w/ any level of environment.
 
-For some terminology, there are many "known" environments (ones that are available in an environment repository somewhere). The "available" environments are the ones that the Rook can currently choose to enter (like if you're at Home Depot, then `location:homedepot.com/store-4321` will be available; if you're using Obsidian on the Mac, then `mac:md.obsidian/HomeProjects/ToDos` could be available; if you're working on the Rook repo, then `project:the-rooks-nest/rook` could be available). And an environment is "entered" if the current session has loaded its skills and is accepting its state changes. (Though it is also possible to request to enter environments that aren't available - like if you want the Rook to know how to navigate a Home Depot even though you're not there. Implementation and UX TBD)
+For some terminology, there are many "known" environments (ones that are available in an environment repository somewhere). The "available" environments are the ones that the Rook can currently choose to enter (like if you're at Home Depot, then `location:homedepot.com/store-4321` will be available; if you're using Obsidian on the Mac, then `mac:md.obsidian/HomeProjects/ToDos` could be available; if you're working on the Rook repo, then `project:rookkeeper/rook` could be available). And an environment is "entered" if the current session has loaded its skills and is accepting its state changes. (Though it is also possible to request to enter environments that aren't available - like if you want the Rook to know how to navigate a Home Depot even though you're not there. Implementation and UX TBD)
 
 ## Environment repositories
 

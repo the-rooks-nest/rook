@@ -112,7 +112,7 @@ export class RookCliClient {
     await this.request("initialize", {
       protocolVersion: 1,
       clientCapabilities: {
-        _meta: { "com.the-rooks-nest": { environmentOffers: true } },
+        _meta: { "com.rookkeeper": { environmentOffers: true } },
       },
       clientInfo: { name: "rook-cli", title: "Rook CLI", version: "0.1.0" },
     });
@@ -152,7 +152,7 @@ export class RookCliClient {
     await new Promise((resolve) => setTimeout(resolve, 1500));
     for (const offer of this.pendingOffers) {
       printLine(COLORS.gray, `accepting offer: ${offer.environmentId} bundle=${offer.bundleId}`);
-      await this.request("_com.the-rooks-nest/environment_offer_resolve", {
+      await this.request("_com.rookkeeper/environment_offer_resolve", {
         sessionId: this.sessionId,
         environmentId: offer.environmentId,
         bundleHash: offer.bundleHash,
@@ -273,7 +273,7 @@ export class RookCliClient {
       return;
     }
 
-    if (frame.method === "_com.the-rooks-nest/environment_offer") {
+    if (frame.method === "_com.rookkeeper/environment_offer") {
       const params = frame.params || {};
       const envId = params.environmentId || "?";
       const bundleId = params.bundleId || "?";

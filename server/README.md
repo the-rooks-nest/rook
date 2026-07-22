@@ -73,7 +73,7 @@ The facade at `/api/ws` is the primary client interface. It implements:
 - `session/set_mode`, `session/set_config_option` — ACP controls
 - `session/close` — closes a session
 - `session/request_permission` — permission request relay
-- `_com.the-rooks-nest/environment_offer*` — negotiated env-offer extension
+- `_com.rookkeeper/environment_offer*` — negotiated env-offer extension
 
 ### Session model
 
@@ -90,7 +90,7 @@ On environment change, only the affected session's runtime is restarted — the 
 
 ### Environment system
 
-The environment system (registration, decision store, repository) continues to work through its existing HTTP API. `AgentRuntimeManager` subscribes per-session to `EnvironmentManager` and applies skill paths to runtime launch configuration. Environment offers use the negotiated `com.the-rooks-nest` ACP extension rather than proprietary session updates.
+The environment system (registration, decision store, repository) continues to work through its existing HTTP API. `AgentRuntimeManager` subscribes per-session to `EnvironmentManager` and applies skill paths to runtime launch configuration. Environment offers use the negotiated `com.rookkeeper` ACP extension rather than proprietary session updates.
 
 ### Key source files
 

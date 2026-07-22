@@ -158,7 +158,7 @@ public final class AcpSocket {
 
     public func resolveEnvironmentOffer(environmentId: String, bundleHash: String, decision: String) async throws {
         guard environmentOfferExtensionEnabled, let sessionId = currentSessionId else { throw SocketError.disconnected }
-        _ = try await request(method: "_com.the-rooks-nest/environment_offer_resolve", params: [
+        _ = try await request(method: "_com.rookkeeper/environment_offer_resolve", params: [
             "sessionId": sessionId,
             "environmentId": environmentId,
             "bundleHash": bundleHash,
@@ -201,7 +201,7 @@ public final class AcpSocket {
             "protocolVersion": 1,
             "clientCapabilities": [
                 "_meta": [
-                    "com.the-rooks-nest": [
+                    "com.rookkeeper": [
                         "environmentOffers": true,
                     ],
                 ],
@@ -211,7 +211,7 @@ public final class AcpSocket {
         let meta = initialize["_meta"] as? [String: Any]
         runtimeIDs = (meta?["runtimeIds"] as? [String]) ?? []
         defaultRuntimeID = meta?["defaultRuntimeId"] as? String
-        if let ext = meta?["com.the-rooks-nest"] as? [String: Any], ext["environmentOffers"] != nil {
+        if let ext = meta?["com.rookkeeper"] as? [String: Any], ext["environmentOffers"] != nil {
             environmentOfferExtensionEnabled = true
         }
         setConnected(true)
@@ -269,13 +269,13 @@ public final class AcpSocket {
             return
         }
 
-        if frame["method"] as? String == "_com.the-rooks-nest/environment_offer",
+        if frame["method"] as? String == "_com.rookkeeper/environment_offer",
            let params = frame["params"] as? [String: Any] {
             handleEnvironmentOffer(params)
             return
         }
 
-        if frame["method"] as? String == "_com.the-rooks-nest/environment_offer_resolved",
+        if frame["method"] as? String == "_com.rookkeeper/environment_offer_resolved",
            let params = frame["params"] as? [String: Any],
            let environmentId = params["environmentId"] as? String,
            let bundleHash = params["bundleHash"] as? String {

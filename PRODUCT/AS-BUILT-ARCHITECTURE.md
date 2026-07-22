@@ -155,11 +155,11 @@ Persistent decisions are SQLite-backed, keyed by bundle-content hash.
 
 ### 6.4 Environment offers (ACP extension)
 
-Environment offers use a negotiated ACP extension under the owned namespace `com.the-rooks-nest`:
+Environment offers use a negotiated ACP extension under the owned namespace `com.rookkeeper`:
 
-- `_com.the-rooks-nest/environment_offer` notification
-- `_com.the-rooks-nest/environment_offer_resolve` request
-- `_com.the-rooks-nest/environment_offer_resolved` notification
+- `_com.rookkeeper/environment_offer` notification
+- `_com.rookkeeper/environment_offer_resolve` request
+- `_com.rookkeeper/environment_offer_resolved` notification
 
 Support is advertised in `initialize` capability `_meta`.
 
@@ -252,4 +252,4 @@ client ACP request: session/load
 
 Supported ACP methods: `initialize`, `session/list`, `session/new`, `session/load`, `session/resume`, `session/prompt`, `session/cancel`, `session/set_mode`, `session/set_config_option`, `session/close`.
 
-Supported ACP extension: `_com.the-rooks-nest/environment_offer*` (negotiated via `initialize` capabilities).
+Supported ACP extension: `_com.rookkeeper/environment_offer*` (negotiated via `initialize` capabilities).

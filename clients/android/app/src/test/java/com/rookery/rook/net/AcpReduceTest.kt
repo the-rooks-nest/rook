@@ -224,7 +224,7 @@ class AcpReduceTest {
         socket.handleFrame(
             buildJsonObject {
                 put("jsonrpc", "2.0")
-                put("method", "_com.the-rooks-nest/environment_offer")
+                put("method", "_com.rookkeeper/environment_offer")
                 putJsonObject("params") {
                     put("environmentId", "location:store")
                     put("displayName", "Store")
@@ -257,7 +257,7 @@ class AcpReduceTest {
         socket.handleFrame(
             buildJsonObject {
                 put("jsonrpc", "2.0")
-                put("method", "_com.the-rooks-nest/environment_offer_resolved")
+                put("method", "_com.rookkeeper/environment_offer_resolved")
                 putJsonObject("params") {
                     put("environmentId", "location:store")
                     put("bundleHash", "hash-1")

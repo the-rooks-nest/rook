@@ -117,7 +117,7 @@ class AcpSocket(
                 put("protocolVersion", 1)
                 putJsonObject("clientCapabilities") {
                     putJsonObject("_meta") {
-                        putJsonObject("com.the-rooks-nest") { put("environmentOffers", true) }
+                        putJsonObject("com.rookkeeper") { put("environmentOffers", true) }
                     }
                 }
                 putJsonObject("clientInfo") {
@@ -130,7 +130,7 @@ class AcpSocket(
         )
         runtimeIds = initialize["_meta"]?.jsonObject?.get("runtimeIds")?.jsonArray?.mapNotNull { it.stringValue } ?: emptyList()
         defaultRuntimeId = initialize["_meta"]?.jsonObject?.get("defaultRuntimeId")?.stringValue
-        environmentOffersEnabled = initialize["_meta"]?.jsonObject?.get("com.the-rooks-nest") != null
+        environmentOffersEnabled = initialize["_meta"]?.jsonObject?.get("com.rookkeeper") != null
         return initialize
     }
 
@@ -225,7 +225,7 @@ class AcpSocket(
     suspend fun resolveEnvironmentOffer(environmentId: String, bundleHash: String, decision: String) {
         if (!environmentOffersEnabled) return
         sendSocketRequest(
-            "_com.the-rooks-nest/environment_offer_resolve",
+            "_com.rookkeeper/environment_offer_resolve",
             buildJsonObject {
                 put("sessionId", sessionId ?: throw SocketRequestException.NotConnected())
                 put("environmentId", environmentId)
@@ -338,7 +338,7 @@ class AcpSocket(
             }
         }
 
-        if (method == "_com.the-rooks-nest/environment_offer") {
+        if (method == "_com.rookkeeper/environment_offer") {
             val params = frame["params"] as? JsonObject
             val environmentId = params?.get("environmentId")?.stringValue
             val bundleId = params?.get("bundleId")?.stringValue
@@ -349,7 +349,7 @@ class AcpSocket(
             }
         }
 
-        if (method == "_com.the-rooks-nest/environment_offer_resolved") {
+        if (method == "_com.rookkeeper/environment_offer_resolved") {
             val params = frame["params"] as? JsonObject
             val environmentId = params?.get("environmentId")?.stringValue
             val bundleHash = params?.get("bundleHash")?.stringValue

@@ -62,7 +62,7 @@ async function handleMessage(raw: string, runtimes: AgentRuntimeManager, send: R
     switch (message.method) {
       case "initialize": {
         const clientMeta = object(object(message.params)?.clientCapabilities)?._meta;
-        const extension = object(clientMeta)?.["com.the-rooks-nest"];
+        const extension = object(clientMeta)?.["com.rookkeeper"];
         const environmentOffers = object(extension)?.environmentOffers === true;
         setEnvironmentOffers(environmentOffers);
         send(success(requestId!, {
@@ -70,11 +70,11 @@ async function handleMessage(raw: string, runtimes: AgentRuntimeManager, send: R
           agentInfo: { name: "rook", title: "Rook", version: "0.1.0" },
           agentCapabilities: { loadSession: true, sessionCapabilities: { list: {}, resume: {}, close: {} }, promptCapabilities: { image: false, audio: false, embeddedContext: false } },
           authMethods: [],
-          _meta: { runtimeIds: runtimes.runtimeIds(), defaultRuntimeId: runtimes.defaultRuntimeId(), "com.the-rooks-nest": { environmentOffers: { offerNotification: true, resolveRequest: true } } },
+          _meta: { runtimeIds: runtimes.runtimeIds(), defaultRuntimeId: runtimes.defaultRuntimeId(), "com.rookkeeper": { environmentOffers: { offerNotification: true, resolveRequest: true } } },
         }));
         return;
       }
-      case "_com.the-rooks-nest/environment_offer_resolve": {
+      case "_com.rookkeeper/environment_offer_resolve": {
         const params = object(message.params) ?? {};
         const sessionId = requiredSessionId(params);
         const environmentId = typeof params.environmentId === "string" ? params.environmentId : "";
