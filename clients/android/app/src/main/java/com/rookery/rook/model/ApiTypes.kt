@@ -73,7 +73,6 @@ data class EnvironmentCandidate(
     val displayName: String,
     @SerialName("operator") val operator_: String?,
     val storeNumber: String?,
-    val bestGuessStoreNumber: String?,
     val address: String?,
     val latitude: Double?,
     val longitude: Double?,
@@ -127,6 +126,12 @@ data class EnvironmentBundlePreview(
 data class EnvironmentPreview(
     val environmentId: String,
     val bundles: List<EnvironmentBundlePreview>
+)
+
+@Serializable
+data class CandidateEnvironmentRecord(
+    val id: String,
+    val metadata: JsonObject
 )
 
 data class EnvironmentOffer(

@@ -19,6 +19,7 @@ import androidx.lifecycle.ViewModel
 import com.rookery.rook.location.ArrivalContext
 import com.rookery.rook.location.LocationController
 import com.rookery.rook.model.AcpClientEvent
+import com.rookery.rook.model.CandidateEnvironmentRecord
 import com.rookery.rook.model.AgentDefinition
 import com.rookery.rook.model.AgentSessionSummary
 import com.rookery.rook.model.ChatBlock
@@ -827,8 +828,9 @@ class RookViewModel(
                 put("latitude", place.latitude)
                 put("longitude", place.longitude)
                 put("radiusMeters", place.radius)
+                put("sourceName", place.name)
             }
-            runCatching { api.registerEnvironment(envId, place.name, metadata) }
+            runCatching { api.registerEnvironment(CandidateEnvironmentRecord(envId, metadata)) }
         }
     }
 
@@ -842,8 +844,9 @@ class RookViewModel(
                 put("latitude", place.latitude)
                 put("longitude", place.longitude)
                 put("radiusMeters", place.radius)
+                put("sourceName", place.name)
             }
-            runCatching { api.registerEnvironment(envId, place.name, metadata) }
+            runCatching { api.registerEnvironment(CandidateEnvironmentRecord(envId, metadata)) }
         }
     }
 

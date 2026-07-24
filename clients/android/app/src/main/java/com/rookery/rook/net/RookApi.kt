@@ -3,6 +3,7 @@ package com.rookery.rook.net
 
 import com.rookery.rook.model.AgentDefinition
 import com.rookery.rook.model.AgentSessionSummary
+import com.rookery.rook.model.CandidateEnvironmentRecord
 import com.rookery.rook.model.EnvironmentCandidate
 import com.rookery.rook.model.EnvironmentListItem
 import com.rookery.rook.model.EnvironmentPreview
@@ -96,15 +97,9 @@ class RookApi(
         return json.decodeFromJsonElement(EnvironmentPreview.serializer(), body)
     }
 
-    suspend fun registerEnvironment(id: String, sourceName: String, metadata: JsonObject) {
-        postJson(
-            "api/environments/register",
-            buildJsonObject {
-                put("id", id)
-                put("sourceName", sourceName)
-                put("metadata", metadata)
-            }
-        )
+    suspend fun registerEnvironment(candidate: CandidateEnvironmentRecord) {
+        val payload = json.encodeToJsonElement(CandidateEnvironmentRecord.serializer(), candidate).jsonObject
+        postJson("api/environments/register", payload)
     }
 
     /**
@@ -114,7 +109,7 @@ class RookApi(
     suspend fun identifyAvailableEnvironments(request: IdentifyAvailableRequest): List<EnvironmentCandidate> {
         @Serializable data class IdentifyResponse(val candidates: List<EnvironmentCandidate>)
         val payload = json.encodeToJsonElement(IdentifyAvailableRequest.serializer(), request).jsonObject
-        val body = postJson("api/environments/identify-available", payload)
+        val body = postJson("api/environments/identify", payload)
         return json.decodeFromJsonElement(IdentifyResponse.serializer(), body).candidates
     }
 
